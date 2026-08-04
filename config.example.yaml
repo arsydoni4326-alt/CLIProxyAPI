@@ -263,6 +263,14 @@ xai:
 # When true, enable authentication for the WebSocket API (/v1/ws).
 ws-auth: true
 
+# When true, mirror lightweight per-request metadata (method, path, model, status, latency —
+# never prompts, bodies, headers, or credentials) to an in-process subscriber and expose it
+# over the authenticated WebSocket endpoint /live-flow/ws for the management center's Live
+# Flow view. When false (default), no hub, middleware, or endpoint exists (zero overhead).
+# The live stream is protected as a websocket route when ws-auth is true; it is an
+# in-process fan-out with no persistence or queueing.
+flow-visualization-enabled: false
+
 # When > 0, emit blank lines every N seconds for non-streaming responses to prevent idle timeouts.
 nonstream-keepalive-interval: 0
 # Streaming behavior (SSE keep-alives + safe bootstrap retries).
