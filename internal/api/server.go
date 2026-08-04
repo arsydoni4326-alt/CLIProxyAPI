@@ -103,6 +103,10 @@ type Server struct {
 
 	exampleAPIKeySafeModeEnabled bool
 	exampleAPIKeySafeModeActive  atomic.Bool
+
+	// flowHub fans out per-request flow metadata to live visualization subscribers.
+	// Nil when flow-visualization-enabled is false (zero overhead).
+	flowHub *flowHub
 }
 
 // NewServer creates and initializes a new API server instance.
@@ -217,6 +221,14 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	}
 	s.localPassword = optionState.localPassword
 
+	// Live flow visualization (opt-in): create the hub and mirror middleware only when
+	// flow-visualization-enabled is true. When disabled there is no hub, no middleware,
+	// and no endpoint — zero overhead.
+	if cfg.FlowVisualizationEnabled {
+		s.flowHub = newFlowHub()
+		engine.Use(flowVizMiddleware(s.flowHub))
+	}
+
 	// Home heartbeat gate: when home is enabled, block all endpoints with 503 until the
 	// subscribe-config heartbeat connection is healthy.
 	engine.Use(s.homeHeartbeatMiddleware())
@@ -224,6 +236,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 
 	// Setup routes
 	s.setupRoutes()
+
+	// Expose the live flow metadata stream over WebSocket only when enabled.
+	if s.flowHub != nil {
+		s.AttachWebsocketRoute("/live-flow/ws", s.flowHub)
+	}
 
 	// Apply additional router configurators from options
 	if optionState.routerConfigurator != nil {

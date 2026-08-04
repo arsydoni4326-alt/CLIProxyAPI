@@ -93,6 +93,11 @@ type Config struct {
 	// WebsocketAuth enables or disables authentication for the WebSocket API.
 	WebsocketAuth bool `yaml:"ws-auth" json:"ws-auth"`
 
+	// FlowVisualizationEnabled mirrors lightweight per-request metadata (eye: no prompts,
+	// bodies, or secrets) to an in-process subscriber for the management center's live
+	// flow view. When false (default), no event objects, goroutines, or endpoints exist.
+	FlowVisualizationEnabled bool `yaml:"flow-visualization-enabled" json:"flow-visualization-enabled"`
+
 	// AntigravitySignatureCacheEnabled controls whether signature cache validation is enabled for thinking blocks.
 	// When true (default), cached signatures are preferred and validated.
 	// When false, client signatures are used directly after normalization (bypass mode).
