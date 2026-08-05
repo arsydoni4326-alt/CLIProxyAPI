@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers"
 	"github.com/tidwall/gjson"
 )
 
@@ -273,4 +275,189 @@ func (h *flowHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Websocket conversation turns
+// ---------------------------------------------------------------------------
+//
+// Websocket conversation routes (e.g. Responses over WS at /v1/responses,
+// /backend-api/codex/responses) hold a single HTTP request open for the whole
+// session, so flowVizMiddleware emits exactly one event — only after c.Next()
+// returns on disconnect — and none while the conversation is live. To keep the
+// live-flow stream animating, every request frame (response.create /
+// response.append) inside an open WS session is observed as one virtual
+// request: one flowEvent per turn, with Method "WS", the route template of the
+// upgrade request, turn latency, and the conversation model recovered from the
+// frame payload (payloads are in-memory frame bytes, never re-read from the
+// wire, so capturing them is free). The sdk handler packages call the observer
+// through the FlowObserver interface (declared in sdk/api/handlers, installed
+// from server.go) because an sdk package cannot import internal/api.
+
+// flowWSStatuses bounds the pending-turn table for WS requests. Pathological
+// clients could complete more turns than this without surfacing an event; the
+// cap keeps one connection's bookkeeping bounded (eviction simply means a turn
+// renders without its start timestamp, never a leak).
+const flowWSStatuses = 256
+
+type flowWSTurn struct {
+	model string
+	start time.Time
+}
+
+// flowWSRequestState tracks the pending turns of one websocket-based HTTP
+// request: resolved model (from payload or thread cache) + turn start, keyed by
+// the turn's request id. Entries are removed on completion, so steady-state
+// memory holds only in-flight turns.
+type flowWSRequestState struct {
+	mu    sync.Mutex
+	turns map[string]flowWSTurn
+}
+
+func newFlowWSRequestState() *flowWSRequestState {
+	return &flowWSRequestState{turns: make(map[string]flowWSTurn, 8)}
+}
+
+// flowWSStateKey is the Gin context key under which *flowWSRequestState is
+// stored. Raw strings matching this exact text convert to the key cleanly.
+const flowWSStateKey = "cpa_flow_ws_state"
+
+// wsFlowObserver implements handlers.FlowObserver against a flowHub.
+type wsFlowObserver struct {
+	hub *flowHub
+}
+
+// ginContextFrom resolves the originating request's Gin context of a websocket
+// turn. The execution context passed to the hooks is derived from
+// c.Request.Context() with the Gin context stored under the "gin" key (the
+// established idiom across executor-level code paths). Returns false when the
+// hook was called with a context that cannot be traced back — the event is
+// simply skipped rather than guessed at.
+func ginContextFrom(ctx context.Context) (*gin.Context, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	v := ctx.Value("gin")
+	c, ok := v.(*gin.Context)
+	return c, ok && c != nil
+}
+
+// hasSubscribers reports whether the hub currently has at least one live-flow
+// consumer. All sniffing/bookkeeping short-circuits on this so a WS session
+// without viewers costs effectively nothing.
+func (h *flowHub) hasSubscribers() bool {
+	h.mu.RLock()
+	ok := len(h.subs) > 0
+	h.mu.RUnlock()
+	return ok
+}
+
+// WSMessageStart implements handlers.FlowObserver. It resolves the turn's model
+// from the frame payload (with the same thread-key conversation recovery used
+// for HTTP bodies), then records it under the request id so the matching
+// completion can publish precise metadata.
+func (o *wsFlowObserver) WSMessageStart(ctx context.Context, requestID string, payload []byte) {
+	hub := o.hub
+	if hub == nil || !hub.hasSubscribers() {
+		return
+	}
+	c, ok := ginContextFrom(ctx)
+	if !ok || c.Request == nil {
+		return
+	}
+
+	// Cap oversized frames defensively: model/thread keys live in the opening
+	// bytes of realistic frames; scanning remains bounded without touching
+	// memory ownership of the caller's payload.
+	sniff := payload
+	if len(sniff) > flowModelSniffCap {
+		sniff = sniff[:flowModelSniffCap]
+	}
+
+	threadKey := flowThreadKey(sniff)
+	var modelStr string
+	if model := gjson.GetBytes(sniff, "model"); model.Exists() {
+		modelStr = strings.TrimSpace(model.String())
+	}
+	if modelStr != "" {
+		if threadKey != "" {
+			hub.rememberConvModel(threadKey, modelStr)
+		}
+	} else {
+		modelStr = hub.convModelFor(threadKey)
+	}
+
+	state := getFlowWSState(c)
+	state.mu.Lock()
+	// Evict the oldest entry at capacity; a dropped entry merely renders its
+	// completion without a start timestamp (never a leak).
+	if len(state.turns) >= flowWSStatuses {
+		for k := range state.turns {
+			delete(state.turns, k)
+			break
+		}
+	}
+	state.turns[requestID] = flowWSTurn{model: modelStr, start: time.Now()}
+	state.mu.Unlock()
+}
+
+// WSMessageComplete implements handlers.FlowObserver: it publishes one event
+// per websocket turn, reusing the route's request id so a turn correlates with
+// its parent connection in the UI. Status comes straight from the turn outcome
+// (200 ok; 4xx/5xx on error). Latency is measured from WSMessageStart.
+func (o *wsFlowObserver) WSMessageComplete(ctx context.Context, requestID string, status int) {
+	hub := o.hub
+	if hub == nil {
+		return
+	}
+	c, ok := ginContextFrom(ctx)
+	if !ok || c.Request == nil {
+		return
+	}
+	state := getFlowWSState(c)
+	state.mu.Lock()
+	turn, exists := state.turns[requestID]
+	if exists {
+		delete(state.turns, requestID)
+	}
+	state.mu.Unlock()
+	// Completions without a recorded start (before the feature engaged, or
+	// evicted) skip publishing rather than fabricating metadata.
+	if !exists {
+		return
+	}
+
+	hub.publish(flowEvent{
+		ID:        logging.GetGinRequestID(c),
+		Timestamp: turn.start.UnixMilli(),
+		Method:    "WS",
+		Path:      c.FullPath(),
+		Model:     turn.model,
+		Status:    status,
+		LatencyMs: time.Since(turn.start).Milliseconds(),
+	})
+}
+
+// getFlowWSState fetches (lazily creating) the per-request WS turn table.
+// Writing on first use is safe: the Responses WS handler is the only goroutine
+// that calls the observer for a single request (the frame read loop is
+// single-threaded per connection).
+func getFlowWSState(c *gin.Context) *flowWSRequestState {
+	if v, exists := c.Get(flowWSStateKey); exists {
+		if state, ok := v.(*flowWSRequestState); ok && state != nil {
+			return state
+		}
+	}
+	state := newFlowWSRequestState()
+	c.Set(flowWSStateKey, state)
+	return state
+}
+
+// newFlowWSObserver builds the observer that server.go installs into
+// sdk/api/handlers when flow visualization is enabled.
+func newFlowWSObserver(hub *flowHub) handlers.FlowObserver {
+	if hub == nil {
+		return nil
+	}
+	return &wsFlowObserver{hub: hub}
 }

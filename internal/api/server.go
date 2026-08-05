@@ -227,6 +227,9 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	if cfg.FlowVisualizationEnabled {
 		s.flowHub = newFlowHub()
 		engine.Use(flowVizMiddleware(s.flowHub))
+		// Let sdk websocket handlers mirror per-turn events through the hub; the
+		// sdk cannot import internal/api, so the observer is injected via setter.
+		handlers.SetFlowObserver(newFlowWSObserver(s.flowHub))
 	}
 
 	// Home heartbeat gate: when home is enabled, block all endpoints with 503 until the
