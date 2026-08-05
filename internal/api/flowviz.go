@@ -33,10 +33,60 @@ type flowEvent struct {
 type flowHub struct {
 	mu   sync.RWMutex
 	subs map[chan []byte]struct{}
+
+	// convModel remembers which model a conversation/thread uses so follow-up
+	// requests that omit the "model" body field can still be routed to the right
+	// node in the live-flow view. It is metadata-only, in-memory, and bounded
+	// (see flowConvModelCapacity). Entries are added opportunistically whenever a
+	// request carries both a thread key and a model, and read back when a request
+	// carries only a thread key.
+	convMu    sync.Mutex
+	convModel map[string]string
+	convOrder []string // FIFO insertion order for eviction (oldest first)
 }
 
+// flowConvModelCapacity bounds the conversation->model cache. Conversations are
+// visualization-only context, so evicting the oldest beyond this cap is safe: a
+// dropped entry just means one follow-up request renders against the catch-all
+// "others" node instead of its model node.
+const flowConvModelCapacity = 1024
+
 func newFlowHub() *flowHub {
-	return &flowHub{subs: make(map[chan []byte]struct{})}
+	return &flowHub{
+		subs:      make(map[chan []byte]struct{}),
+		convModel: make(map[string]string),
+		convOrder: make([]string, 0, flowConvModelCapacity),
+	}
+}
+
+// rememberConvModel records threadKey -> model, evicting the oldest entry once
+// the capacity is exceeded. Empty inputs are ignored.
+func (h *flowHub) rememberConvModel(threadKey, model string) {
+	if threadKey == "" || model == "" {
+		return
+	}
+	h.convMu.Lock()
+	if _, exists := h.convModel[threadKey]; !exists {
+		h.convOrder = append(h.convOrder, threadKey)
+	}
+	h.convModel[threadKey] = model
+	for len(h.convOrder) > flowConvModelCapacity {
+		oldest := h.convOrder[0]
+		h.convOrder = h.convOrder[1:]
+		delete(h.convModel, oldest)
+	}
+	h.convMu.Unlock()
+}
+
+// convModelFor returns the model previously recorded for threadKey, if any.
+func (h *flowHub) convModelFor(threadKey string) string {
+	if threadKey == "" {
+		return ""
+	}
+	h.convMu.Lock()
+	m := h.convModel[threadKey]
+	h.convMu.Unlock()
+	return m
 }
 
 // publish encodes the event and broadcasts to subscribers, dropping when any
@@ -86,10 +136,44 @@ func (h *flowHub) unsubscribe(ch chan []byte) {
 // downstream handler regardless of whether a model was found.
 const flowModelSniffCap = 64 * 1024
 
+// flowThreadKey extracts a stable conversation/thread identifier from a JSON
+// request body across the API families this gateway proxies. Follow-up requests
+// in a conversation frequently omit "model", but they do carry one of these
+// continuation/thread keys, which lets us recover the conversation's model from
+// the hub cache. Returns "" when no known thread key is present.
+func flowThreadKey(body []byte) string {
+	// Ordered roughly by how specific/unique each key is. The first non-empty
+	// string wins.
+	keys := []string{
+		"previous_response_id",    // OpenAI Responses continuation
+		"previous_interaction_id", // Interactions continuation
+		"conversation.id",         // Anthropic-style nested conversation object
+		"conversation_id",         // flat conversation id (various chat clients)
+		"conversation",            // flat conversation (string form)
+		"session_id",              // session-scoped clients
+		"sessionId",
+		"chat_id", // chat-threaded clients
+		"thread_id",
+	}
+	for _, k := range keys {
+		if v := gjson.GetBytes(body, k); v.Exists() && v.Type == gjson.String {
+			if s := strings.TrimSpace(v.String()); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
 // sniffFlowModel extracts the "model" field (metadata only) from a JSON request
 // body so the live-flow view can route the pulse to the right model node. It is
 // gated on having at least one subscriber so an idle hub costs nothing. Bodies
 // are restored verbatim afterwards, so handlers are unaffected.
+//
+// Follow-up requests in a conversation often omit "model". When the body carries
+// a thread key, the mapping to the resolved model is remembered; when the body
+// carries only a thread key, the model is recovered from that mapping so the
+// pulse is still routed to the correct model node on every request.
 func sniffFlowModel(c *gin.Context, hub *flowHub) {
 	hub.mu.RLock()
 	idle := len(hub.subs) == 0
@@ -115,10 +199,27 @@ func sniffFlowModel(c *gin.Context, hub *flowHub) {
 	if err != nil || len(body) == 0 {
 		return
 	}
+
+	threadKey := flowThreadKey(body)
+	var modelStr string
 	if model := gjson.GetBytes(body, "model"); model.Exists() {
-		if s := strings.TrimSpace(model.String()); s != "" {
-			c.Set("flow_model", s)
+		modelStr = strings.TrimSpace(model.String())
+	}
+
+	if modelStr != "" {
+		// First request (or any request that names its model): record + use it so
+		// subsequent follow-ups in the same thread can be routed too.
+		if threadKey != "" {
+			hub.rememberConvModel(threadKey, modelStr)
 		}
+		c.Set("flow_model", modelStr)
+		return
+	}
+
+	// Follow-up request with no "model" body field: recover the conversation's
+	// model so the live-flow pulse still routes to the right node.
+	if modelStr = hub.convModelFor(threadKey); modelStr != "" {
+		c.Set("flow_model", modelStr)
 	}
 }
 
