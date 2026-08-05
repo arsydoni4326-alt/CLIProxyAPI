@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/interfaces"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
@@ -466,9 +467,20 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 			lastResponseOutput = []byte("[]")
 			lastResponseID = ""
 			lastResponsePendingToolCallIDs = nil
+			// The prewarm turn bypasses the forward path, but it is still a
+			// conversation turn worth mirroring to live-flow subscribers.
+			if obs := handlers.CurrentFlowObserver(); obs != nil {
+				obs.WSMessageStart(executionParent, logging.GetGinRequestID(c), requestJSON)
+			}
 			if errWrite := writeResponsesWebsocketSyntheticPrewarm(c, writer, requestJSON, wsTimelineLog, passthroughSessionID); errWrite != nil {
+				if obs := handlers.CurrentFlowObserver(); obs != nil {
+					obs.WSMessageComplete(executionParent, logging.GetGinRequestID(c), http.StatusBadGateway)
+				}
 				wsTerminateErr = errWrite
 				return
+			}
+			if obs := handlers.CurrentFlowObserver(); obs != nil {
+				obs.WSMessageComplete(executionParent, logging.GetGinRequestID(c), http.StatusOK)
 			}
 			continue
 		}
@@ -491,6 +503,13 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 		}
 
 		modelName := gjson.GetBytes(requestJSON, "model").String()
+		// Mirror this turn to live-flow subscribers (no-op unless enabled + watched).
+		// requestJSON is sniffed (not the raw frame) so the resolved model survives
+		// the incremental-state merge even when the client omitted it.
+		flowObs := handlers.CurrentFlowObserver()
+		if flowObs != nil {
+			flowObs.WSMessageStart(executionParent, logging.GetGinRequestID(c), requestJSON)
+		}
 		lastAttemptedAuthID := pinnedAuthID
 		attemptedUpstreamMode := responsesWebsocketUpstreamModeUnknown
 		selectedAuthObserved := false
@@ -544,7 +563,15 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 				suppressError: replayPinnedAuthFailure,
 			},
 		)
+		// Terminal mirror of this turn to live-flow subscribers. Completions are
+		// skipped silently when no start was recorded (observer added mid-stream).
+		flowComplete := func(code int) {
+			if flowObs != nil {
+				flowObs.WSMessageComplete(executionParent, logging.GetGinRequestID(c), code)
+			}
+		}
 		if errForward != nil {
+			flowComplete(http.StatusBadGateway)
 			wsTerminateErr = errForward
 			if !errors.Is(errForward, websocket.ErrCloseSent) {
 				log.Warnf("responses websocket: forward failed id=%s error=%v", passthroughSessionID, errForward)
@@ -560,6 +587,7 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 				forgetPinnedAuth()
 			}
 			if replayPinnedAuthFailure(forwardErrMsg) {
+				flowComplete(http.StatusConflict)
 				replayErr := responsesWebsocketHTTPReplayRequiredError()
 				wsTerminateErr = replayErr
 				matched, errClose := writer.closeForUpstreamError(replayErr)
@@ -570,9 +598,15 @@ func (h *OpenAIResponsesAPIHandler) ResponsesWebsocket(c *gin.Context) {
 				}
 				return
 			}
+			status := forwardErrMsg.StatusCode
+			if status == 0 {
+				status = http.StatusBadGateway
+			}
+			flowComplete(status)
 			continue
 		}
 
+		flowComplete(http.StatusOK)
 		toolCacheTurn.commit()
 		upstreamMode = attemptedUpstreamMode
 		if upstreamMode == responsesWebsocketUpstreamModeWS {
