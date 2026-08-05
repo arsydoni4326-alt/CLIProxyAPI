@@ -3,6 +3,8 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,7 +15,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/thinking"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/api/handlers"
+	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 )
 
@@ -39,9 +44,11 @@ type flowHub struct {
 	// convModel remembers which model a conversation/thread uses so follow-up
 	// requests that omit the "model" body field can still be routed to the right
 	// node in the live-flow view. It is metadata-only, in-memory, and bounded
-	// (see flowConvModelCapacity). Entries are added opportunistically whenever a
-	// request carries both a thread key and a model, and read back when a request
-	// carries only a thread key.
+	// (see flowConvModelCapacity). Keys are salted per client (a short digest of
+	// the auth credential — never the credential itself) so two customers that
+	// reuse the same thread id never cross-resolve each other's model. Entries
+	// are added opportunistically whenever a request carries both a thread key
+	// and a model, and read back when a request carries only a thread key.
 	convMu    sync.Mutex
 	convModel map[string]string
 	convOrder []string // FIFO insertion order for eviction (oldest first)
@@ -89,6 +96,164 @@ func (h *flowHub) convModelFor(threadKey string) string {
 	m := h.convModel[threadKey]
 	h.convMu.Unlock()
 	return m
+}
+
+// flowClientSalt derives a stable, credential-free salt from the request's auth
+// headers so conversation->model mappings are isolated per client. Two customers
+// that happen to reuse the same conversation/thread id (common with short ids
+// like "conv-1") must not leak model routing across each other. Only a short
+// one-way digest of the credential is retained — never the credential itself.
+func flowClientSalt(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	secret := strings.TrimSpace(c.Request.Header.Get("Authorization"))
+	if secret != "" {
+		// Normalize the scheme so "Bearer sk-x" and "sk-x" resolve to the same
+		// salt for the same credential. TrimPrefix runs before TrimSpace so a
+		// degenerate "Bearer " (no key) collapses to empty and yields no salt.
+		secret = strings.TrimSpace(strings.TrimPrefix(secret, "Bearer"))
+		if secret == "" {
+			return ""
+		}
+	} else {
+		secret = strings.TrimSpace(c.Request.Header.Get("x-api-key"))
+	}
+	if secret == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:8])
+}
+
+// flowConvKey namespaces a thread key by the originating client's salt so the
+// hub's conversation->model cache can never cross-resolve two clients that
+// happen to share a thread id. Anonymous requests (no auth header) keep the
+// bare thread key.
+func flowConvKey(salt, threadKey string) string {
+	if threadKey == "" {
+		return ""
+	}
+	if salt == "" {
+		return threadKey
+	}
+	return salt + "|" + threadKey
+}
+
+// normalizeFlowModel strips a thinking budget/level suffix (e.g.
+// "gpt-5-codex(16384)" -> "gpt-5-codex") so budget variants of the same model
+// route to one stable topology node instead of fragmenting the ring by budget.
+func normalizeFlowModel(model string) string {
+	model = strings.TrimSpace(model)
+	if !strings.Contains(model, "(") {
+		return model
+	}
+	if res := thinking.ParseSuffix(model); res.HasSuffix && strings.TrimSpace(res.ModelName) != "" {
+		return strings.TrimSpace(res.ModelName)
+	}
+	return model
+}
+
+// flowHandlerTypeForPath maps a request route to the model-registry handler
+// family used by the recovery fallback. Best-effort: unknown routes return "".
+func flowHandlerTypeForPath(path string) string {
+	switch {
+	case strings.Contains(path, "/chat/completions"),
+		strings.Contains(path, "/responses"),
+		strings.Contains(path, "/codex"):
+		return "openai"
+	case strings.Contains(path, "/messages"),
+		strings.Contains(path, "/claude"):
+		return "claude"
+	case strings.Contains(path, "/gemini"),
+		strings.Contains(path, "/v1beta"):
+		return "gemini"
+	}
+	return ""
+}
+
+// flowRegistryFallbackModel resolves the gateway's default routed model for the
+// request's API family, so a follow-up that names neither a model nor a known
+// thread still renders against a meaningful node instead of the catch-all. It
+// is a variable so tests can stub it without touching the global registry.
+var flowRegistryFallbackModel = func(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	handlerType := flowHandlerTypeForPath(c.FullPath())
+	if handlerType == "" {
+		return ""
+	}
+	model, err := registry.GetGlobalRegistry().GetFirstAvailableModel(handlerType)
+	if err != nil || model == "" {
+		return ""
+	}
+	return model
+}
+
+// resolveFlowModel is the single model-recovery path shared by HTTP bodies and
+// websocket frames. Resolution order:
+//  1. a "model" field in the payload (normalized; remembered for the thread);
+//  2. the hub's per-client conversation->model mapping for the thread key;
+//  3. connModel: the per-connection last observed model, used for chained
+//     websocket streams whose follow-up frames carry only a fresh
+//     previous_response_id (never a thread key or model). It wins over the
+//     registry default because it is the actual conversation model;
+//  4. the model registry's first available model for the request's API family.
+//
+// connModel is empty for plain HTTP requests (no persistent connection, so no
+// cross-request hint exists). When a thread key is present but nothing
+// resolves, a debug log records the miss (warn-level would spam on legitimate
+// model-less turn streams).
+func resolveFlowModel(c *gin.Context, hub *flowHub, sniff []byte, connModel string) string {
+	threadKey := flowThreadKey(sniff)
+	convKey := flowConvKey(flowClientSalt(c), threadKey)
+
+	var modelStr string
+	if model := gjson.GetBytes(sniff, "model"); model.Exists() {
+		modelStr = normalizeFlowModel(model.String())
+	}
+	if modelStr != "" {
+		// First request (or any request that names its model): record + use it
+		// so subsequent follow-ups in the same thread can be routed too.
+		if convKey != "" {
+			hub.rememberConvModel(convKey, modelStr)
+		}
+		return modelStr
+	}
+
+	// Follow-up with no "model" body field: recover the conversation's model.
+	if modelStr = hub.convModelFor(convKey); modelStr != "" {
+		return modelStr
+	}
+
+	// Chained websocket turn: prefer the connection's last model over the global
+	// default. The fresh continuation id can never match the thread cache, so the
+	// closest signal to the real conversation model is the one already seen on
+	// this connection. Not remembered under the thread key — continuation ids are
+	// one-shot and must not pollute the cache.
+	if connModel != "" {
+		return connModel
+	}
+
+	// Last resort: the gateway's default routed model for this API family so
+	// the pulse still lands on a meaningful node rather than the catch-all.
+	if modelStr = flowRegistryFallbackModel(c); modelStr != "" {
+		if convKey != "" {
+			hub.rememberConvModel(convKey, modelStr)
+		}
+		return modelStr
+	}
+
+	if threadKey != "" {
+		path, reqID := "", ""
+		if c != nil {
+			path = c.FullPath()
+			reqID = logging.GetGinRequestID(c)
+		}
+		log.Debugf("live-flow: model recovery failed (renders under catch-all node); path=%s thread=%s request_id=%s", path, threadKey, reqID)
+	}
+	return ""
 }
 
 // publish encodes the event and broadcasts to subscribers, dropping when any
@@ -151,11 +316,15 @@ func flowThreadKey(body []byte) string {
 		"previous_interaction_id", // Interactions continuation
 		"conversation.id",         // Anthropic-style nested conversation object
 		"conversation_id",         // flat conversation id (various chat clients)
+		"conversationId",          // camelCase variant (utility clients)
 		"conversation",            // flat conversation (string form)
 		"session_id",              // session-scoped clients
 		"sessionId",
-		"chat_id", // chat-threaded clients
+		"chat_id",                  // chat-threaded clients
 		"thread_id",
+		"parentMessageId",          // chat-clone/cli utility clients
+		"metadata.conversation_id", // OpenAI Responses metadata bag
+		"metadata.thread_id",
 	}
 	for _, k := range keys {
 		if v := gjson.GetBytes(body, k); v.Exists() && v.Type == gjson.String {
@@ -172,10 +341,12 @@ func flowThreadKey(body []byte) string {
 // gated on having at least one subscriber so an idle hub costs nothing. Bodies
 // are restored verbatim afterwards, so handlers are unaffected.
 //
-// Follow-up requests in a conversation often omit "model". When the body carries
-// a thread key, the mapping to the resolved model is remembered; when the body
-// carries only a thread key, the model is recovered from that mapping so the
-// pulse is still routed to the correct model node on every request.
+// Follow-up requests in a conversation often omit "model". Resolution is
+// delegated to resolveFlowModel: the resolved model is remembered per client
+// (salted by the request's auth credential, so shared thread ids never leak
+// across customers) whenever a thread key is present, recovered on follow-ups,
+// and finally falls back to the gateway's default model for the API family so
+// the pulse still routes to a meaningful node on every request.
 func sniffFlowModel(c *gin.Context, hub *flowHub) {
 	hub.mu.RLock()
 	idle := len(hub.subs) == 0
@@ -202,25 +373,7 @@ func sniffFlowModel(c *gin.Context, hub *flowHub) {
 		return
 	}
 
-	threadKey := flowThreadKey(body)
-	var modelStr string
-	if model := gjson.GetBytes(body, "model"); model.Exists() {
-		modelStr = strings.TrimSpace(model.String())
-	}
-
-	if modelStr != "" {
-		// First request (or any request that names its model): record + use it so
-		// subsequent follow-ups in the same thread can be routed too.
-		if threadKey != "" {
-			hub.rememberConvModel(threadKey, modelStr)
-		}
-		c.Set("flow_model", modelStr)
-		return
-	}
-
-	// Follow-up request with no "model" body field: recover the conversation's
-	// model so the live-flow pulse still routes to the right node.
-	if modelStr = hub.convModelFor(threadKey); modelStr != "" {
+	if modelStr := resolveFlowModel(c, hub, body, ""); modelStr != "" {
 		c.Set("flow_model", modelStr)
 	}
 }
@@ -309,9 +462,16 @@ type flowWSTurn struct {
 // request: resolved model (from payload or thread cache) + turn start, keyed by
 // the turn's request id. Entries are removed on completion, so steady-state
 // memory holds only in-flight turns.
+//
+// lastModel is the most recent model resolved on this connection, used to route
+// chained Responses streams whose follow-up frames carry only a fresh
+// previous_response_id (never a thread key or model). It is scoped to the
+// request, so two clients on different connections can never observe each
+// other's model resolution.
 type flowWSRequestState struct {
-	mu    sync.Mutex
-	turns map[string]flowWSTurn
+	mu        sync.Mutex
+	turns     map[string]flowWSTurn
+	lastModel string
 }
 
 func newFlowWSRequestState() *flowWSRequestState {
@@ -353,9 +513,10 @@ func (h *flowHub) hasSubscribers() bool {
 }
 
 // WSMessageStart implements handlers.FlowObserver. It resolves the turn's model
-// from the frame payload (with the same thread-key conversation recovery used
-// for HTTP bodies), then records it under the request id so the matching
-// completion can publish precise metadata.
+// via resolveFlowModel (the same salted thread-key recovery used for HTTP
+// bodies, plus a per-connection fallback for chained Responses streams), then
+// records it under the request id so the matching completion can publish
+// precise metadata.
 func (o *wsFlowObserver) WSMessageStart(ctx context.Context, requestID string, payload []byte) {
 	hub := o.hub
 	if hub == nil || !hub.hasSubscribers() {
@@ -374,21 +535,21 @@ func (o *wsFlowObserver) WSMessageStart(ctx context.Context, requestID string, p
 		sniff = sniff[:flowModelSniffCap]
 	}
 
-	threadKey := flowThreadKey(sniff)
-	var modelStr string
-	if model := gjson.GetBytes(sniff, "model"); model.Exists() {
-		modelStr = strings.TrimSpace(model.String())
-	}
-	if modelStr != "" {
-		if threadKey != "" {
-			hub.rememberConvModel(threadKey, modelStr)
-		}
-	} else {
-		modelStr = hub.convModelFor(threadKey)
+	state := getFlowWSState(c)
+
+	// Resolve against the payload, per-client thread cache, then the
+	// connection's last observed model (chained streams carry only fresh
+	// continuation ids that never match the thread cache); the registry default
+	// is only consulted when the connection has no model yet.
+	modelStr := resolveFlowModel(c, hub, sniff, state.lastModel)
+	if modelStr == "" {
+		log.Debugf("live-flow: ws turn model unresolved; request_id=%s turn=%s", logging.GetGinRequestID(c), requestID)
 	}
 
-	state := getFlowWSState(c)
 	state.mu.Lock()
+	if modelStr != "" {
+		state.lastModel = modelStr
+	}
 	// Evict the oldest entry at capacity; a dropped entry merely renders its
 	// completion without a start timestamp (never a leak).
 	if len(state.turns) >= flowWSStatuses {
