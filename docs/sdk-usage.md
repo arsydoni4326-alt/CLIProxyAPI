@@ -5,7 +5,7 @@ The `sdk/cliproxy` module exposes the proxy as a reusable Go library so external
 ## Install & Import
 
 ```bash
-go get github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy
+go get github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy
 ```
 
 ```go
@@ -14,12 +14,14 @@ import (
     "errors"
     "time"
 
-    "github.com/router-for-me/CLIProxyAPI/v6/internal/config"
-    "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy"
+    "github.com/router-for-me/CLIProxyAPI/v7/internal/config"
+    "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy"
+    // Server-option helpers live in sdk/api
+    "github.com/router-for-me/CLIProxyAPI/v7/sdk/api"
 )
 ```
 
-Note the `/v6` module path.
+Note the `/v7` module path.
 
 ## Minimal Embed
 
@@ -53,15 +55,15 @@ svc, _ := cliproxy.NewBuilder().
   WithConfigPath("config.yaml").
   WithServerOptions(
     // Add global middleware
-    cliproxy.WithMiddleware(func(c *gin.Context) { c.Header("X-Embed", "1"); c.Next() }),
+    api.WithMiddleware(func(c *gin.Context) { c.Header("X-Embed", "1"); c.Next() }),
     // Tweak gin engine early (CORS, trusted proxies, etc.)
-    cliproxy.WithEngineConfigurator(func(e *gin.Engine) { e.ForwardedByClientIP = true }),
+    api.WithEngineConfigurator(func(e *gin.Engine) { e.ForwardedByClientIP = true }),
     // Add your own routes after defaults
-    cliproxy.WithRouterConfigurator(func(e *gin.Engine, _ *handlers.BaseAPIHandler, _ *config.Config) {
+    api.WithRouterConfigurator(func(e *gin.Engine, _ *handlers.BaseAPIHandler, _ *config.Config) {
       e.GET("/healthz", func(c *gin.Context) { c.String(200, "ok") })
     }),
     // Override request log writer/dir
-    cliproxy.WithRequestLoggerFactory(func(cfg *config.Config, cfgPath string) logging.RequestLogger {
+    api.WithRequestLoggerFactory(func(cfg *config.Config, cfgPath string) logging.RequestLogger {
       return logging.NewFileRequestLogger(true, "logs", filepath.Dir(cfgPath))
     }),
   ).
