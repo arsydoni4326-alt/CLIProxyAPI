@@ -260,7 +260,12 @@ xai:
   # The injected tool is also added to tool_choice.allowed_tools when applicable.
   inject-x-search: false
 
-# When true, enable authentication for the WebSocket API (/v1/ws).
+# When true, enable authentication for WebSocket routes (/v1/ws and, when flow
+# visualization is on, /live-flow/ws). Clients authenticate with the same api-keys
+# list used by the HTTP API — there is no separate WS token. A key may be presented
+# via the Authorization: Bearer, X-Api-Key, or X-Goog-Api-Key header, or the ?key= or
+# ?auth_token= query parameter. Editing api-keys rotates/revokes WS credentials on the
+# next config hot-reload without a restart; this flag is likewise hot-toggleable.
 ws-auth: true
 
 # When true, mirror lightweight per-request metadata (method, path, model, status, latency —
