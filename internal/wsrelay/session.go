@@ -10,27 +10,65 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Timeout exception (see docs/ARCHITECTURE.md §2.5): long-lived websocket
+// sessions may set read/write deadlines; these are not request-bound
+// credential-acquisition timeouts. heartbeats keep the session alive and the
+// read deadline is reset on every pong.
 const (
-	readTimeout          = 60 * time.Second
-	writeTimeout         = 10 * time.Second
-	maxInboundMessageLen = 64 << 20 // 64 MiB
-	heartbeatInterval    = 30 * time.Second
+	readTimeout          = 60 * time.Second // max silence between pongs before the session is dropped
+	writeTimeout         = 10 * time.Second // applies to every write, including heartbeat pings
+	maxInboundMessageLen = 64 << 20         // 64 MiB
+	heartbeatInterval    = 30 * time.Second // ping cadence; well under readTimeout so pongs arrive in time
 )
 
 var errClosed = errors.New("websocket session closed")
 
+// pendingRequest serializes terminal delivery and closure of its channel.
+//
+// The channel ch has a single owner lifecycle: it is closed exactly once, and
+// no message is ever sent after that close. Both the session teardown path
+// (cleanup) and the request context-cancellation path can race to terminate a
+// pending request, so close and "send terminal message then close" are made
+// mutually exclusive via mu. Without this, a concurrent cleanup() sending a
+// terminal error would race request()'s close(ch) (send-on-closed panic and a
+// data race on the channel header).
 type pendingRequest struct {
-	ch        chan Message
-	closeOnce sync.Once
+	ch     chan Message
+	mu     sync.Mutex
+	closed bool
 }
 
+// final delivers msg (best-effort) and then closes the channel. It is a no-op
+// if the channel is already closed.
+func (pr *pendingRequest) final(msg Message) {
+	if pr == nil {
+		return
+	}
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+	if pr.closed {
+		return
+	}
+	pr.closed = true
+	select {
+	case pr.ch <- msg:
+	default:
+	}
+	close(pr.ch)
+}
+
+// close shuts the channel without delivering a terminal message. It is a no-op
+// if the channel is already closed (e.g. a terminal message already delivered).
 func (pr *pendingRequest) close() {
 	if pr == nil {
 		return
 	}
-	pr.closeOnce.Do(func() {
+	pr.mu.Lock()
+	if !pr.closed {
+		pr.closed = true
 		close(pr.ch)
-	})
+	}
+	pr.mu.Unlock()
 }
 
 type session struct {
@@ -105,14 +143,21 @@ func (s *session) dispatch(msg Message) {
 	}
 	if value, ok := s.pending.Load(msg.ID); ok {
 		req := value.(*pendingRequest)
+		if msg.Type == MessageTypeHTTPResp || msg.Type == MessageTypeError || msg.Type == MessageTypeStreamEnd {
+			// Terminal message: remove it from the map, then deliver-and-close
+			// atomically via final so the send can never race a concurrent close
+			// from cleanup() or request() cancellation.
+			if actual, loaded := s.pending.LoadAndDelete(msg.ID); loaded {
+				actual.(*pendingRequest).final(msg)
+			}
+			return
+		}
+		// Non-terminal (stream chunk): plain buffered send. This is safe because
+		// the channel is only ever closed on a terminal message, ctx cancel, or
+		// teardown — none of which deliver here.
 		select {
 		case req.ch <- msg:
 		default:
-		}
-		if msg.Type == MessageTypeHTTPResp || msg.Type == MessageTypeError || msg.Type == MessageTypeStreamEnd {
-			if actual, loaded := s.pending.LoadAndDelete(msg.ID); loaded {
-				actual.(*pendingRequest).close()
-			}
 		}
 		return
 	}
@@ -169,17 +214,16 @@ func (s *session) request(ctx context.Context, msg Message) (<-chan Message, err
 func (s *session) cleanup(cause error) {
 	s.closeOnce.Do(func() {
 		close(s.closed)
+		// Drain and close every pending request. The map is never reset
+		// (no `s.pending = sync.Map{}`): reassigning the field would be a
+		// data race against concurrent request() goroutines that read
+		// s.pending via LoadAndDelete when their context is cancelled.
 		s.pending.Range(func(key, value any) bool {
 			req := value.(*pendingRequest)
 			msg := Message{ID: key.(string), Type: MessageTypeError, Payload: map[string]any{"error": cause.Error()}}
-			select {
-			case req.ch <- msg:
-			default:
-			}
-			req.close()
+			req.final(msg)
 			return true
 		})
-		s.pending = sync.Map{}
 		_ = s.conn.Close()
 		if s.manager != nil {
 			s.manager.handleSessionClosed(s, cause)
