@@ -60,15 +60,16 @@ func BenchmarkWSMessageStartIdleHub(b *testing.B) {
 }
 
 // BenchmarkWSMessageCompleteIdleHub measures the completion path with no live
-// viewers. Unlike WSMessageStart it currently proceeds through the gin-context
-// resolution and state lookup before skipping the publish — this benchmark
-// quantifies that asymmetric idle cost.
+// viewers. Like WSMessageStart, it short-circuits on hasSubscribers() before
+// touching the gin context or turn table — an idle hub can hold no recorded
+// turns, so completion on one is definitionally a no-op. Expect a single
+// RLock + branch (~few ns, 0 allocs), symmetric with the start path.
 func BenchmarkWSMessageCompleteIdleHub(b *testing.B) {
 	_, exec := newWSBenchContext(b)
 	hub := newFlowHub() // no subscribers
 	obs := newFlowWSObserver(hub)
-	// Warm up once so the one-time lazy state creation is amortized out of the
-	// steady-state metric.
+	// Warm up once so any one-time branch/predictor effects are amortized out
+	// of the steady-state metric.
 	obs.WSMessageComplete(exec, "never-started", 404)
 
 	b.ReportAllocs()

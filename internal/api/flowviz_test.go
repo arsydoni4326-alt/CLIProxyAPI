@@ -282,6 +282,73 @@ func TestWSObserverIdleHubCostsNothing(t *testing.T) {
 	}
 }
 
+// --- Hub drop policy (lightweight constraint) --------------------------------
+
+func TestFlowHubDropsRatherThanBlocksSlowSubscriber(t *testing.T) {
+	hub := newFlowHub()
+	ch := hub.subscribe()
+	defer hub.unsubscribe(ch)
+
+	// Fill the 64-deep subscriber buffer without draining, then overflow it.
+	// publish must return promptly every time (non-blocking fan-out) and the
+	// overflow event must be dropped for this subscriber — never backpressure.
+	const overflow = 3
+	total := cap(ch) + overflow
+	for i := 0; i < total; i++ {
+		hub.publish(flowEvent{ID: "ev", Timestamp: int64(i), Method: "POST", Path: "/v1/x", Status: 200})
+	}
+	if got := len(ch); got != cap(ch) {
+		t.Fatalf("subscriber buffer len = %d, want capped at %d (drops, not growth)", got, cap(ch))
+	}
+
+	// The surviving events are the first cap(ch) published, in order: drops
+	// discard the newest overflow, never corrupt or reorder the backlog.
+	for i := 0; i < cap(ch); i++ {
+		ev := readFlowEvent(t, ch)
+		if ev.Timestamp != int64(i) {
+			t.Fatalf("event %d Timestamp = %d, want %d (backlog must stay ordered)", i, ev.Timestamp, i)
+		}
+	}
+	if ev := readFlowEventOptional(ch, 100*time.Millisecond); ev != nil {
+		t.Fatalf("overflow event should have been dropped, got %+v", *ev)
+	}
+}
+
+func TestFlowHubUnsubscribedChannelNeverPublished(t *testing.T) {
+	hub := newFlowHub()
+	ch := hub.subscribe()
+	hub.unsubscribe(ch)
+
+	// After unsubscribe the channel is closed and removed; publishing must not
+	// panic (sending on a removed, closed channel would) — it is a no-op.
+	hub.publish(flowEvent{ID: "ev", Method: "POST", Path: "/v1/x", Status: 200})
+	if _, open := <-ch; open {
+		t.Fatal("unsubscribed channel must be closed")
+	}
+}
+
+func TestWSObserverCompleteIdleHubShortcuts(t *testing.T) {
+	hub := newFlowHub() // no subscribers
+
+	c, exec := newWSContext(t, http.MethodGet, "/v1/responses", "/v1/responses")
+	obs := newFlowWSObserver(hub)
+
+	// On an idle hub the completion must short-circuit before touching the gin
+	// context — no per-request turn state may be created (that's the whole
+	// point of the guard: an unobserved session leaves zero residue).
+	obs.WSMessageComplete(exec, "ghost-turn", http.StatusOK)
+	if _, exists := c.Get(flowWSStateKey); exists {
+		t.Fatal("idle-hub completion must not create WS turn state")
+	}
+
+	// And nothing is ever published afterwards for that ghost turn.
+	ch := hub.subscribe()
+	defer hub.unsubscribe(ch)
+	if ev := readFlowEventOptional(ch, 100*time.Millisecond); ev != nil {
+		t.Fatalf("unexpected event from idle-hub completion: %+v", *ev)
+	}
+}
+
 func TestWSObserverMapsErrorStatuses(t *testing.T) {
 	hub := newFlowHub()
 	ch := hub.subscribe()
