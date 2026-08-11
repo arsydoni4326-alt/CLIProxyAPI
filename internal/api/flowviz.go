@@ -320,7 +320,7 @@ func flowThreadKey(body []byte) string {
 		"conversation",            // flat conversation (string form)
 		"session_id",              // session-scoped clients
 		"sessionId",
-		"chat_id",                  // chat-threaded clients
+		"chat_id", // chat-threaded clients
 		"thread_id",
 		"parentMessageId",          // chat-clone/cli utility clients
 		"metadata.conversation_id", // OpenAI Responses metadata bag
@@ -550,8 +550,8 @@ func (o *wsFlowObserver) WSMessageStart(ctx context.Context, requestID string, p
 	if modelStr != "" {
 		state.lastModel = modelStr
 	}
-	// Evict the oldest entry at capacity; a dropped entry merely renders its
-	// completion without a start timestamp (never a leak).
+	// Evict one entry at capacity (any key — eviction merely means that turn's
+	// completion renders without a start timestamp; never a leak).
 	if len(state.turns) >= flowWSStatuses {
 		for k := range state.turns {
 			delete(state.turns, k)
@@ -568,7 +568,10 @@ func (o *wsFlowObserver) WSMessageStart(ctx context.Context, requestID string, p
 // (200 ok; 4xx/5xx on error). Latency is measured from WSMessageStart.
 func (o *wsFlowObserver) WSMessageComplete(ctx context.Context, requestID string, status int) {
 	hub := o.hub
-	if hub == nil {
+	// Short-circuit on an idle hub, mirroring WSMessageStart: turns can only
+	// have been recorded while a subscriber was attached, so with no
+	// subscribers there is nothing to complete (and no gin context to touch).
+	if hub == nil || !hub.hasSubscribers() {
 		return
 	}
 	c, ok := ginContextFrom(ctx)
