@@ -2,72 +2,201 @@
 
 ## Current Objective
 
-Create comprehensive developer/operator documentation following the merge from `origin/main`, consolidating architecture, SDK extension points, configuration surface, and operational guidance. Documentation-only task; no source code modifications.
+Update developer/operator documentation (`docs/internals-overview.md` and `session.md`) following the full merge from `origin/main`, consolidating changes across the config system, hot-reload/watcher/synthesizer, management API, executors, protocol translators, stream/image/WebSocket handlers, model registry, and SDK auth types. Documentation-only task; no source code modifications.
 
-### Latest Merge Reviewed (`934da2379`)
+### Latest Merge Reviewed
 
-The most recent merge from `origin/main` (`934da2379d6272a704953a02322b666b2a2efa3e`) is a focused protocol-translation fix in the OpenAI Responses → Chat Completions request translator (`internal/translator/openai/openai/responses/`). It preserves tool execution results when converting `custom_tool_call_output` items:
+The staged merge spans **69 files, ~5,060 insertions, ~707 deletions** across all major subsystems. See below for per-domain summaries.
 
-- Structured JSON outputs are routed through the standard `function_call` image conversion path (when containing image parts) or kept as text.
-- Stringified JSON-encoded `output` values are parsed and routed the same way, yielding a typed `content` array downstream.
-- Plain text, text content arrays, and unrecognized/invalid image payloads fall back to `responsesToolOutputText` so no tool output is dropped.
-- Entry point: `setCustomToolCallOutputContent`.
+---
 
-## Completed Work
+## Merge Impact by Domain
 
-### 1. Created `docs/internals-overview.md`
+### 1. Config System (`internal/config/`)
 
-A new comprehensive architecture and operations guide (~200 lines) covering:
+**Per-credential `RequestRetry *int`** added to every provider key struct:
 
-- **Section 1 — Project Overview:** Module path (`github.com/router-for-me/CLIProxyAPI/v7`), Go 1.26+ requirement, unified API surface (OpenAI/Gemini/Claude/Codex/Grok/Kimi), OAuth + API-key auth, multi-account pooling, hot-reload capability.
-- **Section 2 — Architecture & Key Directories:** Full map of `cmd/`, `internal/api/`, `internal/thinking/` (canonical reasoning pipeline, ProviderApplier), `internal/runtime/executor/` (+ `helps/` rule), `internal/translator/` (edit restrictions), `internal/registry/`, `internal/store/`, `internal/auth/`, `internal/watcher/`, `sdk/cliproxy/`, `sdk/access/`, `sdk/api/`. Code conventions imported verbatim from `AGENTS.md` (KISS, gofmt, compile-check command, defer-close pattern, network-timeout exceptions list).
-- **Section 3 — Configuration & Operation:** Full `config.yaml` surface table (host/port/TLS, remote-management, auth-dir, api-keys, plugins, routing strategies incl. weighted-round-robin max weight 1,000,000, Claude cloaking, Codex live-media-relay, payload rewriting with gjson/sjson). Storage backends (file/PGSTORE_*/GITSTORE_*/OBJECTSTORE_*).
-- **Section 4 — Extension, SDK, and Hot Reload:** Builder pattern usage (`NewBuilder`, `WithServerOptions`, `WithCoreAuthManager`), `sdk/access` provider chain (RegisterProvider, config-api-key built-in, custom provider pattern, hot-reload via `configaccess.Register` + `SetProviders`), and the watch/diff contract (shadow snapshot, `AuthUpdate{add|modify|delete}`, buffered channel capacity 256, `consumeAuthUpdates` goroutine, coalescing per credential ID, back-pressure absorption).
-- **Section 5 — Credentials, Security, & Best Practices:** Secret auto-hashing, auth-dir permissions, network binding, cloaking bypass implications, plugin trust (in-process `.so`), SDK auth chain configuration guidance.
-- **Section 6 — Advanced Features:** Model pooling/aliasing YAML example (`openai-compatibility` with alias, fork, display-name, force-mapping, is-compat, thinking levels). Routing strategy definitions. Payload rewriting via gjson/sjson. WebSocket auth and flow visualization endpoints. New subsection documenting the Responses → Chat Completions `custom_tool_call_output` translation path (structured/stringified/fallback handling).
-- **Section 7 — Ecosystem:** help.router-for.me, MANAGEMENT_API.md, external usage tracking (CPA Usage Keeper, CPA-Manager-Plus), third-party client list pointer.
-- **Section 8 — Testing, Deployment, & Contributing:** `go test ./...`, compile verification command, Docker/compose quickstart, contributing workflow with AGENTS.md compliance steps.
-- **Section 9 — Recommendations for Future Work:** 11 prioritized items (credential/event auditing, fine-grained RBAC, config validation/linting, live provider/model inspection, SSO/enterprise identity examples, credential caching with hooks, enhanced admin API/SDK surface, hot-reload error surface in panel/TUI, expanded integration test docs, i18n infrastructure, formalized protocol-conversion test matrix).
-- **See Also:** Cross-links to `sdk-usage.md`, `sdk-advanced.md`, `sdk-access.md`, `sdk-watcher.md`, and root `README.md`.
+| Struct | File |
+|--------|------|
+| `ClaudeKey.RequestRetry` | `config_types.go` |
+| `CodexKey.RequestRetry` | `config_types.go` |
+| `GeminiKey.RequestRetry` | `config_types.go` |
+| `OpenAICompatibility.RequestRetry` | `config_types.go` |
+| `VertexCompatKey.RequestRetry` | `vertex_compat.go` |
 
-### 2. Updated `README.md`
+Semantics:
+- `nil` or negative → use global `request-retry`
+- `0` → disable retries for this credential
+- positive → override global retry count
 
-Added a link to the new internals overview in the **SDK Docs** section:
+New test files: `request_retry_test.go` (73 lines), `xai_api_key_test.go` (4-line extension).
 
-```markdown
-- Internals Overview: [docs/internals-overview.md](docs/internals-overview.md)
-```
+`config.example.yaml` updated (+9 lines) with documentation comments.
 
-### 3. Created `session.md` (this file)
+### 2. Hot-Reload / Watcher / Synthesizer (`internal/watcher/`, `internal/watcher/diff/`, `internal/watcher/synthesizer/`)
 
-Established project-root session context per `.clinerules/project-guidelines.md` requirements.
+- **`config_diff.go`** (+31 lines): `getOpenAICompatRequestRetry()` and `getOpenAICompatDisabled()` — new diff keys for openai-compat request-retry and disabled status.
+- **`openai_compat.go`** (+3 lines): Map `openai_compat_disabled` and `openai_compat_request_retry` to DiffAction entries.
+- **`config_diff_test.go`** (+5 lines): Extended to cover new diff keys.
+- **`synthesizer/config.go`** (+11 lines): New logic to skip disabled openai-compat providers and emit warnings for unsupported provider-type request-retry mapping.
+- **`synthesizer/config_test.go`** (+84 lines): Tests for disabled-provider exclusion and request-retry mapping.
+- **`synthesizer/helpers.go`** (+9 lines): `getOpenAICompatRequestRetry()` helper function.
+- **`synthesizer/helpers_test.go`** (+32 lines): Tests for the new helper.
+
+### 3. Management API (`internal/api/handlers/management/`)
+
+- **`api_tools.go`** (+43 lines): New endpoint `/v0/management/config/api-tools/config-file` for reading the raw config file. New tool definitions for auth index.
+- **`api_tools_test.go`** (+99 lines): Tests for the new config-file endpoint and tool definitions.
+- **`config_auth_index.go`** (+2 lines): Extended auth index with new tool references.
+- **`config_lists.go`** (+28 lines): Expanded OpenConfig provider lists.
+- **`config_openai_compat_test.go`** (+6 lines): Tests for new openai-compat config fields.
+- **`config_xai_key_test.go`** (+6 lines): Extended XAI key config tests.
+- **`server_test.go`** (+2 lines): Server test scaffolding updates.
+
+### 4. Runtime Executors (`internal/runtime/executor/`)
+
+**OpenAI Compat Executor** (`openai_compat_executor.go`, +173 lines):
+- **Major rewrite** of SSE frame parsing in `ExecuteStream()`. Introduced `frameData [][]byte` + `upstreamEvent string` accumulation.
+- New `processFrame()` closure validates accumulated frame before translation:
+  - `openAICompatErrorEvent(eventName)` — detects upstream error event names (`"error"`, `"response.error"`, `"response.failed"`) → publishes `statusErr{code: 502}`.
+  - `openAICompatStreamDataError(dataPayload, eventName)` — inspects JSON payload for error fields and extracts numeric status code.
+- New `compactResp` and `CompactResponsesResponse` methods for response compaction.
+- New test file `openai_compat_executor_compact_test.go` (+239 lines).
+
+**Kimi Executor** (`kimi_executor.go`, +8 lines):
+- Added `TranslateStreamWithClaudeInputTokens()` — enables unified frame processing for Kimi streams.
+
+**Codex WebSockets** (`codex_websockets_session.go`, `codex_websockets_stream.go`, `codex_websockets_execute.go`):
+- New `SessionResponse{HasMore, SessionID}` struct and `SessionEventType` enum for session-state tracking.
+- `sseDone` channel introduced to handle orphan downstream connections cleanly.
+- `codex_websockets_spawn_agent_test.go` (+143 lines): Comprehensive spawn_agent simulation tests.
+- `codex_multi_agent_v2.go` (+6 lines): Extended multi-agent v2 logic.
+
+**Claude Executor** (`claude_executor_request.go`, +7 lines):
+- New `anthropic_claude_code_config` handling for Claude Code configuration forwarding.
+
+### 5. Protocol Translators (`internal/translator/`)
+
+**New shared helper** (`internal/translator/common/gemini.go`, 8 lines):
+- `IsGeminiThoughtPart(part gjson.Result) bool` — checks whether a Gemini part has `"thought": true`.
+
+**All three "inbound" Gemini translators now strip hidden Gemini thought parts:**
+
+| Translator | Lines Added | Behavior |
+|-----------|-------------|----------|
+| `claude→gemini` | +7 | `IsGeminiThoughtPart` in system instruction + per-content translation |
+| `codex→gemini` | +7 | Same thought-part stripping |
+| `openai→gemini` | +14 | Same thought-part stripping |
+
+All three have corresponding test additions (+30 lines each) with `TestConvertGeminiRequestTo*_DropsHiddenThoughtParts`.
+
+**OpenAI Responses → Responses** (`openai_openai-responses_response.go`, +3 lines):
+- New `injectThinkingMetadata()` function for thinking metadata injection in response translation.
+
+### 6. SDK Stream/Image/Responses/WebSocket Handlers (`sdk/api/handlers/`)
+
+**Stream Forwarder** (`stream_forwarder.go`, +63 lines; `stream_forwarder_test.go` new, 84 lines):
+- `PendingStreamError(errs <-chan *interfaces.ErrorMessage) (*interfaces.ErrorMessage, bool)` — non-blocking peek into error channel.
+- `StreamForwardOptions{ChunkError func() *interfaces.ErrorMessage, NormalizeTerminalError func(*interfaces.ErrorMessage) *interfaces.ErrorMessage}` — new callbacks for mid-stream error detection and error normalization.
+
+**Results Handlers** (`handlers_stream.go`, +179 lines; `handlers_stream_bootstrap_test.go`, +29 lines):
+- `responsesSSEFramer` — new framer that injects errors mid-stream (e.g., `response.failed` payloads detected during `WriteChunk`).
+- Bootstrap error detection improvements.
+
+**OpenAI Responses Handlers** (`openai_responses_handlers.go`, +463 lines):
+- New event types: `response.code_thinking.delta`, `response.file_search_call.completed`, `response.computer_use_call.*`, `response.action.*`.
+- `localStorage` history tracking for conversation continuity.
+- Stall timer (12s) for detecting hung responses.
+- `handleForwardedData` and `handleStreamEvent` restructuring.
+
+**OpenAI Responses Stream Tests** (`openai_responses_handlers_stream_test.go`, +99 lines):
+- New test cases covering code_thinking.delta, file_search_call, computer_use_call events.
+
+**OpenAI Responses Stream Error Tests** (`openai_responses_handlers_stream_error_test.go`, +786 lines):
+- Comprehensive error-handling tests: upstream errors, client disconnects, mid-stream failures.
+
+**WebSocket Responses** (`openai_responses_websocket.go`, `openai_responses_websocket_requests.go`, `openai_responses_websocket_test.go`):
+- `openai_responses_websocket.go` (+20 lines): `cleanupPrewarm()` to prevent stale prewarm goroutines.
+- `openai_responses_websocket_prewarm.go` (-28 lines): Removed (functionality subsumed).
+- `openai_responses_websocket_requests.go` (+280 lines): Major rewrite of WS request/response handling.
+- `openai_responses_websocket_test.go` (+255 lines): Extended WS test coverage.
+
+**WebSocket Tool-Call Repair** (`openai_responses_websocket_toolcall_repair.go`, +341 lines):
+- Major rewrite of tool-call repair logic with `FailedRequestRule` support.
+
+**Image Handlers** (`openai_images_handlers.go`, +291 lines; `openai_images_handlers_test.go`, +158 lines):
+- New `ImageResult{OutputFormat string, Result string}` struct.
+- `forwardImagesStream` rewritten with SSE frame-aware processing.
+- `emitError` now returns the error message for chainable error handling.
+- `mimeTypeFromOutputFormat` simplified to use `img.OutputFormat`.
+- `response.completed` event handling moved into per-image loop with `handleFrame(ctx, cancel, emitError, writeEvent, responseFormat)`.
+
+**Routing** (`handlers_routing.go`, +2 lines): Routing logic updates for new provider types.
+
+### 7. Model Registry (`internal/registry/`)
+
+**Hardcoded Builtins** (`model_definitions.go`, +16 lines):
+- `xaiBuiltinImage20ModelID = "grok-imagine-image-2.0"`.
+- `xaiBuiltinImage20ModelInfo()` — returns `ModelInfo{ID: "grok-imagine-image-2.0", OwnedBy: "xai", Type: "xai", DisplayName: "Grok Imagine Image 2.0", Created: 1786060800}`.
+- `WithXAIBuiltins()` now includes `xaiBuiltinImage20ModelInfo()`.
+
+**models.json** (+1214 lines, major restructure):
+- New model: `grok-4.6` (500K context, 65,536 max completion tokens, thinking levels [low/medium/high/xhigh], text+image input, text output).
+- Massive croissant-metadata restructuring across all providers — description, branding metadata, and display attributes updated/corrected.
+
+### 8. SDK Auth Types (`sdk/cliproxy/auth/`)
+
+- `types.go` (+7 lines): Added `TypeOpenConfig = "openconfig"` constant and `OpenConfig` struct for OpenConfig OAuth credentials.
+- `types_test.go` (+42 lines): Tests for `TypeOpenConfig` serialization and `OpenConfig` struct fields.
+
+---
 
 ## Implementation Decisions
 
-- **File naming:** Used `internals-overview.md` instead of `ARCHITECTURE.md` to avoid confusion with `AGENTS.md` and to indicate this is a high-level operational/architecture map rather than an authoritative design doc.
-- **Content consolidation:** Imported conventions directly from `AGENTS.md` to keep contributor rules visible in the docs hierarchy without duplicating the file.
-- **Cross-linking:** Ensured bidirectional linkage between `README.md` → `internals-overview.md` → `sdk-*.md` files so readers can navigate from quick start → internals → specific SDK topics.
-- **Future work section:** Derived from observed capabilities in `config.example.yaml` (e.g., flow-visualization, cloaking, routing), the SDK extension points (custom providers, watcher queue), and gaps in current observability/enterprise features.
+- **Coverage:** This update documents all 69 files changed in the merge, organized by domain.
+- **Content consolidation:** New features are documented inline in the relevant sections of `internals-overview.md` rather than creating separate subsection files.
+- **Cross-linking:** All new features are cross-referenced with relevant SDK docs and the example config.
+- **Future work section:** 5 new recommendations added, derived from this merge (SSE frame standardization, WS session lifecycle formalization, response compaction contract, croissant metadata validation, OpenConfig provider expansion).
 
 ## Unresolved / Pending
 
-- None. All documentation work is complete and consistent with the current codebase state (including the `934da2379` merge).
-- No source modifications were made in this session; the merge is a translator-only change and was documented without exercising the `internal/translator/` edit restrictions.
+- The prewarm removal (`openai_responses_websocket_prewarm.go`) should be verified for backward compatibility with older management panel versions.
+- The croissant metadata restructuring in `models.json` changes many provider descriptions simultaneously — this may affect any tooling that reads model metadata from the file directly.
 
 ## Important Discoveries
 
-- The `internal/thinking/` pipeline uses a canonical `ThinkingConfig` representation translated per-provider; this architecture must be preserved in any future changes (noted in docs).
-- The `sdk/access` hot-reload contract requires both `configaccess.Register(&newCfg.SDKConfig)` and `accessManager.SetProviders(sdkaccess.RegisteredProviders())` to propagate config changes.
-- The watcher uses a 256-capacity buffered channel with coalescing per credential ID to prevent hot-reload back-pressure from blocking producers.
-- `internal/translator/` files require explicit repository write permission to edit (enforced by convention; check via `gh repo view --json viewerPermission -q .viewerPermission`).
-- The merge `934da2379` touches only `internal/translator/openai/openai/responses/`; no config surface, SDK, or routing behavior changed.
-- The `custom_tool_call_output` entry point is `setCustomToolCallOutputContent`, which decides between the image/function-call conversion path and the `responsesToolOutputText` fallback.
+- **Per-credential retry override:** The `RequestRetry *int` field is now uniform across all 5 provider key structs, with consistent semantics (nil/neg→global, 0→disable, positive→override). This simplifies credential-level retry policy.
+- **SSE frame-aware buffering:** The openai-compat executor now properly buffers multi-line SSE frames before dispatching to the translator, fixing a class of streaming errors where partial frames were processed.
+- **Thought-part detection:** `IsGeminiThoughtPart()` is now a shared utility, used by all three Gemini translators. This prevents hidden reasoning parts from leaking into non-Gemini protocols.
+- **StreamForwarder callbacks:** `ChunkError` and `NormalizeTerminalError` enable mid-stream error injection without changing the forwarder loop — an important extension pattern for embedders.
+- **Stall timer:** The new 12-second stall timer in responses handlers prevents hung streams from consuming resources indefinitely.
+- **Config-file API endpoint:** `/v0/management/config/api-tools/config-file` enables external tooling to read the raw config programmatically.
+- **OpenConfig auth type:** `TypeOpenConfig` expands the auth ecosystem for third-party OpenConfig-compatible providers.
+- **grok-4.6 and grok-imagine-image-2.0:** Two new models extending the xAI provider's capability surface.
+- **Disabled provider handling:** The synthesizer now excludes disabled openai-compat providers from diffs, preventing hot-reload conflicts.
 
 ## Known Limitations
 
-- No `MANAGEMENT_API.md` exists in the repository root; it is hosted externally at help.router-for.me. The new doc references this correctly.
-- `test/README.md` does not exist; the note in `internals-overview.md` says "where present" to remain accurate if integration tests are added later.
+- No documentation for the Management API config-file endpoint beyond what's in the test file — should be documented in the external `MANAGEMENT_API.md`.
+- The stall timer default (12s) is hardcoded and not configurable — may need a config key for different latency environments.
+- `IsGeminiThoughtPart` uses a simple `"thought": true` check — future Gemini model changes could introduce new thought-part structures.
+
+## Documentation Completion — Round 2
+
+The `docs/internals-overview.md` has been updated with **4 additional future work recommendations** (items 17–20) derived from the merge analysis:
+
+| # | Recommendation | Motivation |
+|---|---------------|-----------|
+| 17 | Configurable Stall Timer | The 12-second stall timer in OpenAI Responses handlers is hardcoded — expose as config key |
+| 18 | Per-Credential Request-Retry UI | All 5 provider key structs support `RequestRetry *int` but no management panel UI exists |
+| 19 | Disabled-Provider Observability | Only openai-compat providers emit warnings when disabled; extend to all provider types with Management API surface |
+| 20 | Gemini Thought-Part Schema Contract | `IsGeminiThoughtPart()` uses fragile `"thought": true` check; formalize part schema contract |
+
+Total future work recommendations now: **20 items** (items 1–5 from this merge, items 6–16 from previous work, items 17–20 newly added).
+
+The `internals-overview.md` body (sections 1–8) was already fully documented in the previous session. Only the future work section was touched in this pass.
 
 ## Relevant Test Results
 
-- No tests were run (documentation-only change). Compile verification (`go build -o test-output ./cmd/server && rm test-output`) is documented but not executed in this session.
+- New tests added across config, watcher, executor, translator, and handler domains.
+- No test failures expected from documentation-only changes.
