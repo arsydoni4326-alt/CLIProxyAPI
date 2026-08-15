@@ -103,6 +103,9 @@ func NewWatcher(configPath, authDir string, reloadCallback func(*config.Config))
 		lastAuthHashes:  make(map[string]string),
 		fileAuthsByPath: make(map[string]map[string]*coreauth.Auth),
 	}
+	// A freshly-created watcher is not yet running; default `stopped` to true
+	// so Running() reports false before Start() is called.
+	w.stopped.Store(true)
 	w.dispatchCond = sync.NewCond(&w.dispatchMu)
 	if store := sdkAuth.GetTokenStore(); store != nil {
 		if persister, ok := store.(storePersister); ok {
@@ -164,6 +167,11 @@ func (w *Watcher) DispatchRuntimeAuthUpdate(update AuthUpdate) bool {
 // Returns true if the update was enqueued; false if no queue is configured.
 func (w *Watcher) DispatchPersistedAuthUpdate(update AuthUpdate) bool {
 	return w.dispatchPersistedAuthUpdate(update)
+}
+
+// Running returns true if the watcher has been started and not yet stopped.
+func (w *Watcher) Running() bool {
+	return !w.stopped.Load()
 }
 
 // SnapshotCoreAuths converts current clients snapshot into core auth entries.

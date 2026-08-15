@@ -19,6 +19,7 @@ const (
 	tabAPIKeys
 	tabOAuth
 	tabLogs
+	tabStatus
 )
 
 // App is the root bubbletea model that contains all tab sub-models.
@@ -40,6 +41,7 @@ type App struct {
 	keys      keysTabModel
 	oauth     oauthTabModel
 	logs      logsTabModel
+	status    statusTabModel
 
 	client *Client
 
@@ -48,7 +50,7 @@ type App struct {
 	ready  bool
 
 	// Track which tabs have been initialized (fetched data)
-	initialized [6]bool
+	initialized [7]bool
 }
 
 type authConnectMsg struct {
@@ -80,8 +82,9 @@ func NewApp(port int, secretKey string, hook *LogHook) App {
 		keys:          newKeysTabModel(client),
 		oauth:         newOAuthTabModel(client),
 		logs:          newLogsTabModel(client, hook),
+		status:        newStatusTabModel(client),
 		client:        client,
-		initialized: [6]bool{
+		initialized: [7]bool{
 			tabDashboard: true,
 			tabLogs:      true,
 		},
@@ -89,7 +92,7 @@ func NewApp(port int, secretKey string, hook *LogHook) App {
 
 	app.refreshTabs()
 	if authRequired {
-		app.initialized = [6]bool{}
+		app.initialized = [7]bool{}
 	}
 	app.setAuthInputPrompt()
 	return app
@@ -126,6 +129,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.keys.SetSize(contentW, contentH)
 		a.oauth.SetSize(contentW, contentH)
 		a.logs.SetSize(contentW, contentH)
+		a.status.SetSize(contentW, contentH)
 		return a, nil
 
 	case authConnectMsg:
@@ -138,7 +142,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.authenticated = true
 		a.logsEnabled = a.standalone || isLogsEnabledFromConfig(msg.cfg)
 		a.refreshTabs()
-		a.initialized = [6]bool{}
+		a.initialized = [7]bool{}
 		a.initialized[tabDashboard] = true
 		cmds := []tea.Cmd{a.dashboard.Init()}
 		if a.logsEnabled {
@@ -256,6 +260,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.oauth, cmd = a.oauth.Update(msg)
 	case tabLogs:
 		a.logs, cmd = a.logs.Update(msg)
+	case tabStatus:
+		a.status, cmd = a.status.Update(msg)
 	}
 
 	// Keep logs polling alive even when logs tab is not active.
@@ -266,6 +272,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.logs, logCmd = a.logs.Update(msg)
 			if logCmd != nil {
 				cmd = logCmd
+			}
+		}
+	}
+
+	// Keep status polling alive even when status tab is not active.
+	if a.activeTab != tabStatus {
+		switch msg.(type) {
+		case statusPollMsg, statusTickMsg:
+			var statusCmd tea.Cmd
+			a.status, statusCmd = a.status.Update(msg)
+			if statusCmd != nil {
+				cmd = statusCmd
 			}
 		}
 	}
@@ -321,6 +339,8 @@ func (a *App) initTabIfNeeded(_ int) tea.Cmd {
 			return nil
 		}
 		return a.logs.Init()
+	case tabStatus:
+		return a.status.Init()
 	}
 	return nil
 }
@@ -356,6 +376,8 @@ func (a App) View() string {
 		if a.logsEnabled {
 			sb.WriteString(a.logs.View())
 		}
+	case tabStatus:
+		sb.WriteString(a.status.View())
 	}
 
 	// Status bar
@@ -520,6 +542,10 @@ func (a App) broadcastToAllTabs(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 	a.logs, cmd = a.logs.Update(msg)
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	a.status, cmd = a.status.Update(msg)
 	if cmd != nil {
 		cmds = append(cmds, cmd)
 	}

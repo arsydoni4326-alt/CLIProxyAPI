@@ -39,6 +39,7 @@ func (w *Watcher) start(ctx context.Context) error {
 	}
 	log.Debugf("watching auth directory: %s", w.authDir)
 
+	w.stopped.Store(false)
 	go w.processEvents(ctx)
 
 	w.reloadClients(true, nil, false)

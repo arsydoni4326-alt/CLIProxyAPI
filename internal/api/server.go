@@ -206,6 +206,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	applySignatureCacheConfig(nil, cfg)
 	// Initialize management handler
 	s.mgmt = managementHandlers.NewHandler(cfg, configFilePath, authManager)
+	s.mgmt.SetStartedAt(time.Now())
 	s.mgmt.SetPluginHost(optionState.pluginHost)
 	s.mgmt.SetConfigReloadHook(optionState.configReloadHook)
 	if optionState.localPassword != "" {
@@ -416,4 +417,14 @@ func (s *Server) Stop(ctx context.Context) error {
 
 	log.Debug("API server stopped")
 	return nil
+}
+
+// SetWatcherStateCallback installs a callback that reports whether the config watcher is running.
+// The callback is forwarded to the management handler so /v0/management/status can report
+// watcher state without the server package importing the watcher package directly.
+func (s *Server) SetWatcherStateCallback(fn func() bool) {
+	if s == nil || s.mgmt == nil {
+		return
+	}
+	s.mgmt.SetWatcherState(fn)
 }

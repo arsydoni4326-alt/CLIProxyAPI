@@ -40,5 +40,8 @@ func defaultWatcherFactory(configPath, authDir string, reload func(*config.Confi
 		reloadConfigIfChanged: func() {
 			w.ReloadConfigIfChanged()
 		},
+		running: func() bool {
+			return w.Running()
+		},
 	}, nil
 }

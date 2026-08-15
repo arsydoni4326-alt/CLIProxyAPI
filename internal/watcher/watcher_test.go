@@ -1723,3 +1723,42 @@ func TestScheduleProcessEventsStopsOnContextDone(t *testing.T) {
 func hexString(data []byte) string {
 	return strings.ToLower(fmt.Sprintf("%x", data))
 }
+
+// TestWatcherRunningState verifies that Running() returns the correct lifecycle status.
+func TestWatcherRunningState(t *testing.T) {
+	// Create a temporary config file so NewWatcher does not fail.
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("key: value\n"), 0644); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	w, err := NewWatcher(cfgPath, tmpDir, nil)
+	if err != nil {
+		t.Fatalf("NewWatcher() failed: %v", err)
+	}
+
+	// Before Start() → not running
+	if w.Running() {
+		t.Error("expected Running()=false before Start()")
+	}
+
+	// After Start() → running
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := w.Start(ctx); err != nil {
+		t.Fatalf("Start() failed: %v", err)
+	}
+	if !w.Running() {
+		t.Error("expected Running()=true after Start()")
+	}
+
+	// After Stop() → not running
+	if err := w.Stop(); err != nil {
+		t.Fatalf("Stop() failed: %v", err)
+	}
+	if w.Running() {
+		t.Error("expected Running()=false after Stop()")
+	}
+
+	cancel()
+}
