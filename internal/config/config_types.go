@@ -184,6 +184,9 @@ type RemoteManagement struct {
 	AllowRemote bool `yaml:"allow-remote"`
 	// SecretKey is the management key (plaintext or bcrypt hashed). YAML key intentionally 'secret-key'.
 	SecretKey string `yaml:"secret-key"`
+	// AuditLogEnabled logs admin mutations (who-changed-what) as structured logrus
+	// entries when true. Opt-in; defaults to false. Raw keys or request bodies are never logged.
+	AuditLogEnabled bool `yaml:"audit-log-enabled"`
 	// DisableControlPanel skips serving and syncing the bundled management UI when true.
 	DisableControlPanel bool `yaml:"disable-control-panel"`
 	// DisableAutoUpdatePanel disables automatic periodic background updates of the management panel asset from GitHub.

@@ -89,7 +89,7 @@ func (s *Server) handleRedisConnection(conn net.Conn, reader *bufio.Reader) {
 
 		if cmd != "AUTH" && !authed {
 			if s.mgmt != nil {
-				_, statusCode, errMsg := s.mgmt.AuthenticateManagementKey(clientIP, localClient, "")
+				_, statusCode, errMsg, _ := s.mgmt.AuthenticateManagementKey(clientIP, localClient, "")
 				if statusCode == http.StatusForbidden && strings.HasPrefix(errMsg, "IP banned due to too many failed attempts") {
 					_ = writeRedisError(writer, "ERR "+errMsg)
 				} else {
@@ -109,7 +109,7 @@ func (s *Server) handleRedisConnection(conn net.Conn, reader *bufio.Reader) {
 			password, ok := parseAuthPassword(args)
 			if !ok {
 				if s.mgmt != nil {
-					_, statusCode, errMsg := s.mgmt.AuthenticateManagementKey(clientIP, localClient, "")
+					_, statusCode, errMsg, _ := s.mgmt.AuthenticateManagementKey(clientIP, localClient, "")
 					if statusCode == http.StatusForbidden && strings.HasPrefix(errMsg, "IP banned due to too many failed attempts") {
 						_ = writeRedisError(writer, "ERR "+errMsg)
 						if !flush() {
@@ -131,7 +131,7 @@ func (s *Server) handleRedisConnection(conn net.Conn, reader *bufio.Reader) {
 				}
 				continue
 			}
-			allowed, _, errMsg := s.mgmt.AuthenticateManagementKey(clientIP, localClient, password)
+			allowed, _, errMsg, _ := s.mgmt.AuthenticateManagementKey(clientIP, localClient, password)
 			if !allowed {
 				_ = writeRedisError(writer, "ERR "+errMsg)
 				if !flush() {
