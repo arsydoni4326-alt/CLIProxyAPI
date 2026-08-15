@@ -19,7 +19,7 @@ func TestAuthenticateManagementKey_LocalhostIPBan_BlocksCorrectKeyDuringBan(t *t
 	}
 
 	for i := 0; i < 5; i++ {
-		allowed, statusCode, errMsg := h.AuthenticateManagementKey("127.0.0.1", true, "wrong-secret")
+		allowed, statusCode, errMsg, _ := h.AuthenticateManagementKey("127.0.0.1", true, "wrong-secret")
 		if allowed {
 			t.Fatalf("expected auth to be denied at attempt %d", i+1)
 		}
@@ -28,7 +28,7 @@ func TestAuthenticateManagementKey_LocalhostIPBan_BlocksCorrectKeyDuringBan(t *t
 		}
 	}
 
-	allowed, statusCode, errMsg := h.AuthenticateManagementKey("127.0.0.1", true, "test-secret")
+	allowed, statusCode, errMsg, _ := h.AuthenticateManagementKey("127.0.0.1", true, "test-secret")
 	if allowed {
 		t.Fatalf("expected correct key to be denied while banned")
 	}

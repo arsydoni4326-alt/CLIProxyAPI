@@ -305,23 +305,53 @@ func (h *Handler) Middleware() gin.HandlerFunc {
 			provided = c.GetHeader("X-Management-Key")
 		}
 
-		allowed, statusCode, errMsg := h.AuthenticateManagementKey(clientIP, localClient, provided)
+		allowed, statusCode, errMsg, actor := h.AuthenticateManagementKey(clientIP, localClient, provided)
 		if !allowed {
 			c.AbortWithStatusJSON(statusCode, gin.H{"error": errMsg})
 			return
 		}
 		c.Next()
+
+		// Optional admin audit log: record who-changed-what for state-changing
+		// management actions. Opt-in via remote-management.audit-log-enabled.
+		// Raw keys and request bodies are never logged.
+		if h.cfg != nil && h.cfg.RemoteManagement.AuditLogEnabled && isMutationMethod(c.Request.Method) {
+			log.WithFields(log.Fields{
+				"event":     "admin_action",
+				"method":    c.Request.Method,
+				"path":      c.Request.URL.Path,
+				"status":    c.Writer.Status(),
+				"client_ip": clientIP,
+				"local":     localClient,
+				"actor":     actor,
+			}).Info("management_mutation")
+		}
+	}
+}
+
+// isMutationMethod reports whether the HTTP method represents a state-changing
+// management action that should be captured by the optional audit log.
+// Read-only methods (GET/HEAD/OPTIONS) are never audited.
+func isMutationMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	default:
+		return true
 	}
 }
 
 // AuthenticateManagementKey verifies the provided management key for the given client.
 // It mirrors the behaviour of Middleware() so non-HTTP callers can reuse the same logic.
-func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, provided string) (bool, int, string) {
+// The returned actor identifies which credential authenticated the request:
+// "local" (local password), "env" (MANAGEMENT_PASSWORD), or a pseudonymous
+// 8-character prefix of the bcrypt-hashed config secret-key. It is empty on failure.
+func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, provided string) (bool, int, string, string) {
 	const maxFailures = 5
 	const banDuration = 30 * time.Minute
 
 	if h == nil {
-		return false, http.StatusForbidden, "remote management disabled"
+		return false, http.StatusForbidden, "remote management disabled", ""
 	}
 
 	cfg := h.cfg
@@ -345,7 +375,7 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
 		if now.Before(ai.blockedUntil) {
 			remaining := ai.blockedUntil.Sub(now).Round(time.Second)
 			h.attemptsMu.Unlock()
-			return false, http.StatusForbidden, fmt.Sprintf("IP banned due to too many failed attempts. Try again in %s", remaining)
+			return false, http.StatusForbidden, fmt.Sprintf("IP banned due to too many failed attempts. Try again in %s", remaining), ""
 		}
 		// Ban expired, reset state
 		ai.blockedUntil = time.Time{}
@@ -354,7 +384,7 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
 	h.attemptsMu.Unlock()
 
 	if !localClient && !allowRemote {
-		return false, http.StatusForbidden, "remote management disabled"
+		return false, http.StatusForbidden, "remote management disabled", ""
 	}
 
 	fail := func() {
@@ -383,36 +413,43 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
 	}
 
 	if secretHash == "" && envSecret == "" {
-		return false, http.StatusForbidden, "remote management key not set"
+		return false, http.StatusForbidden, "remote management key not set", ""
 	}
 
 	if provided == "" {
 		fail()
-		return false, http.StatusUnauthorized, "missing management key"
+		return false, http.StatusUnauthorized, "missing management key", ""
 	}
 
 	if localClient {
 		if lp := h.localPassword; lp != "" {
 			if subtle.ConstantTimeCompare([]byte(provided), []byte(lp)) == 1 {
 				reset()
-				return true, 0, ""
+				return true, 0, "", "local"
 			}
 		}
 	}
 
 	if envSecret != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(envSecret)) == 1 {
 		reset()
-		return true, 0, ""
+		return true, 0, "", "env"
 	}
 
 	if secretHash == "" || bcrypt.CompareHashAndPassword([]byte(secretHash), []byte(provided)) != nil {
 		fail()
-		return false, http.StatusUnauthorized, "invalid management key"
+		return false, http.StatusUnauthorized, "invalid management key", ""
 	}
 
 	reset()
 
-	return true, 0, ""
+	// Pseudonymous actor: first 8 chars of the bcrypt-hashed config key.
+	// The hash is never logged in full, and the raw key is never logged.
+	actor := "config"
+	if len(secretHash) >= 8 {
+		actor = secretHash[:8]
+	}
+
+	return true, 0, "", actor
 }
 
 // persist saves the current in-memory config to disk.
