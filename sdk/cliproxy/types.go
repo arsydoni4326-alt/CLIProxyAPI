@@ -108,6 +108,7 @@ type WatcherWrapper struct {
 	dispatchPersistedAuth func(update watcher.AuthUpdate) bool
 	setPluginAuthParser   func(parser PluginAuthParser)
 	reloadConfigIfChanged func()
+	running               func() bool
 }
 
 // Start proxies to the underlying watcher Start implementation.
@@ -189,4 +190,12 @@ func (w *WatcherWrapper) SetAuthUpdateQueue(queue chan<- watcher.AuthUpdate) {
 		return
 	}
 	w.setUpdateQueue(queue)
+}
+
+// Running returns true if the underlying watcher has been started and not yet stopped.
+func (w *WatcherWrapper) Running() bool {
+	if w == nil || w.running == nil {
+		return false
+	}
+	return w.running()
 }

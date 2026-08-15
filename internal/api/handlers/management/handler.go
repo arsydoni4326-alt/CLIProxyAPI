@@ -60,6 +60,25 @@ type Handler struct {
 	pluginStoreHTTPClient   pluginstore.HTTPDoer
 	pluginReleaseCacheMu    sync.Mutex
 	pluginReleaseCache      map[string]pluginReleaseCacheEntry
+
+	// statusMu guards status reporting state set at runtime by the server.
+	statusMu     sync.Mutex
+	startedAt    time.Time
+	watcherState func() bool
+}
+
+// SetStartedAt records the server boot time for status reporting.
+func (h *Handler) SetStartedAt(t time.Time) {
+	h.statusMu.Lock()
+	defer h.statusMu.Unlock()
+	h.startedAt = t
+}
+
+// SetWatcherState installs a callback that reports whether the config watcher is running.
+func (h *Handler) SetWatcherState(fn func() bool) {
+	h.statusMu.Lock()
+	defer h.statusMu.Unlock()
+	h.watcherState = fn
 }
 
 type configReloadSnapshot struct {

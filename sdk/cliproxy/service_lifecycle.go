@@ -194,6 +194,12 @@ func (s *Service) Run(ctx context.Context) error {
 			return fmt.Errorf("cliproxy: failed to start watcher: %w", errStart)
 		}
 		log.Info("file watcher started for config and auth directory changes")
+
+		// Wire watcher state into the management status endpoint.
+		if s.server != nil {
+			s.server.SetWatcherStateCallback(watcherWrapper.Running)
+		}
+
 		s.syncPluginModelRuntime(ctx)
 	}
 

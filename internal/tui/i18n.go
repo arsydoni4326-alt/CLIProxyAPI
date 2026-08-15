@@ -50,8 +50,8 @@ var locales = map[string]map[string]string{
 // ──────────────────────────────────────────
 // Tab names
 // ──────────────────────────────────────────
-var zhTabNames = []string{"仪表盘", "配置", "认证文件", "API 密钥", "OAuth", "日志"}
-var enTabNames = []string{"Dashboard", "Config", "Auth Files", "API Keys", "OAuth", "Logs"}
+var zhTabNames = []string{"仪表盘", "配置", "认证文件", "API 密钥", "OAuth", "日志", "状态"}
+var enTabNames = []string{"Dashboard", "Config", "Auth Files", "API Keys", "OAuth", "Logs", "Status"}
 
 // TabNames returns tab names in the current locale.
 func TabNames() []string {
@@ -214,6 +214,9 @@ var zhStrings = map[string]string{
 	"logs_lines":       "行数",
 	"logs_help":        " [a] 自动滚动 • [c] 清除 • [1] 全部 [2] info+ [3] warn+ [4] error • [↑↓] 滚动",
 	"logs_waiting":     "  等待日志输出...",
+
+	// ── Status ──
+	"status_title": "📊 状态",
 }
 
 var enStrings = map[string]string{
@@ -369,4 +372,7 @@ var enStrings = map[string]string{
 	"logs_lines":       "Lines",
 	"logs_help":        " [a] Auto-scroll • [c] Clear • [1] All [2] info+ [3] warn+ [4] error • [↑↓] Scroll",
 	"logs_waiting":     "  Waiting for log output...",
+
+	// ── Status ──
+	"status_title": "📊 Status",
 }

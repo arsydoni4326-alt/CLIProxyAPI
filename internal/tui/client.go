@@ -376,6 +376,12 @@ func (c *Client) GetAuthStatus(state string) (string, string, error) {
 	return status, errMsg, nil
 }
 
+// GetStatus fetches the server status including version, uptime, and watcher state.
+// Returns the parsed response map and any error.
+func (c *Client) GetStatus() (map[string]any, error) {
+	return c.getJSON("/v0/management/status")
+}
+
 // CancelAuthSession cancels a pending OAuth session on the management server.
 func (c *Client) CancelAuthSession(state string) error {
 	state = strings.TrimSpace(state)
