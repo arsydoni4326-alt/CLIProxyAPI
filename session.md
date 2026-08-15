@@ -202,3 +202,9 @@ The `internals-overview.md` body (sections 1–8) was already fully documented i
 
 - New tests added across config, watcher, executor, translator, and handler domains.
 - No test failures expected from documentation-only changes.
+## 2026-08-15 — SDK & Example Growth (Phase 3.4) SHIPPED
+
+- New `examples/access-hook/` — offline self-checking `sdk/access` embedding demo (custom providers, chaining, aggregated auth errors), exits non-zero on failure.
+- Docs EN+CN: `docs/EXAMPLE-{CUSTOM-PROVIDER,TRANSLATOR,ACCESS-HOOK}.md` + `_CN.md`.
+- Root `Makefile` `verify-examples` gate (gofmt/vet/build all examples + runtime smoke of offline-capable access-hook & translator). `make verify-examples` green.
+- No changes to `sdk/` packages; root ROADMAP §3.4 SHIPPED.
