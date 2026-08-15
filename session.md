@@ -2,11 +2,13 @@
 
 ## Current Objective
 
-Update developer/operator documentation (`docs/internals-overview.md` and `session.md`) following the full merge from `origin/main`, consolidating changes across the config system, hot-reload/watcher/synthesizer, management API, executors, protocol translators, stream/image/WebSocket handlers, model registry, and SDK auth types. Documentation-only task; no source code modifications.
+Create dedicated documentation (`docs/MERGE-2026-08-15-auth-metadata-mcp-alias.md`) for merge commit `ea8c8b02` (origin/main merged into dev; parents d3e5e535 / 78f0c407), then update this file. Documentation-only task; no source code modifications. The merge covers: auth metadata merge/preservation on re-login (new SDK `sdk/cliproxy/auth/metadata_merge.go`, `internal/misc/credentials.go` nil-source fix, Claude token storage ordering), BIP-39-based Claude MCP tool aliasing, and model registry generation/revision tracking.
 
 ### Latest Merge Reviewed
 
-The staged merge spans **69 files, ~5,060 insertions, ~707 deletions** across all major subsystems. See below for per-domain summaries.
+The most recently documented merge is `ea8c8b02` — see `docs/MERGE-2026-08-15-auth-metadata-mcp-alias.md` for the full write-up (auth metadata merge, BIP-39 MCP aliases, model registry, test coverage, 10 future-work recommendations).
+
+The previously documented staged merge (still summarized in the sections below) spans **69 files, ~5,060 insertions, ~707 deletions** across all major subsystems.
 
 ---
 
