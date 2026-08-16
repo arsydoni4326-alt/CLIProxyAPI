@@ -347,8 +347,8 @@ func isMutationMethod(method string) bool {
 // "local" (local password), "env" (MANAGEMENT_PASSWORD), or a pseudonymous
 // 8-character prefix of the bcrypt-hashed config secret-key. It is empty on failure.
 func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, provided string) (bool, int, string, string) {
-	const maxFailures = 5
-	const banDuration = 30 * time.Minute
+	maxFailures := 5
+	banDuration := 30 * time.Minute
 
 	if h == nil {
 		return false, http.StatusForbidden, "remote management disabled", ""
@@ -362,6 +362,8 @@ func (h *Handler) AuthenticateManagementKey(clientIP string, localClient bool, p
 	if cfg != nil {
 		allowRemote = cfg.RemoteManagement.AllowRemote
 		secretHash = cfg.RemoteManagement.SecretKey
+		maxFailures = cfg.RemoteManagement.MaxFailures()
+		banDuration = cfg.RemoteManagement.BanWindow()
 	}
 	if h.allowRemoteOverride {
 		allowRemote = true

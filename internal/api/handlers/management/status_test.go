@@ -77,6 +77,69 @@ func TestGetStatus_WithStartedAtAndWatcher(t *testing.T) {
 	}
 }
 
+func TestGetStatus_ReportsBlockedIPs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &Handler{
+		failedAttempts: map[string]*attemptInfo{
+			"203.0.113.9": {count: 0, blockedUntil: time.Now().Add(10 * time.Minute)},
+			"203.0.113.3": {count: 0, blockedUntil: time.Now().Add(5 * time.Minute)},
+		},
+	}
+	engine := gin.New()
+	engine.GET("/v0/management/status", h.GetStatus)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v0/management/status", nil)
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.BlockedIPs) != 2 {
+		t.Fatalf("blocked_ips len = %d, want 2", len(resp.BlockedIPs))
+	}
+	// Sorted by IP for stable output.
+	if resp.BlockedIPs[0].IP != "203.0.113.3" || resp.BlockedIPs[1].IP != "203.0.113.9" {
+		t.Fatalf("unexpected blocked_ips order: %+v", resp.BlockedIPs)
+	}
+	for _, b := range resp.BlockedIPs {
+		if b.Remaining == "" {
+			t.Fatalf("blocked IP %q has empty remaining", b.IP)
+		}
+		if _, err := time.ParseDuration(b.Remaining); err != nil {
+			t.Fatalf("blocked IP %q remaining %q is not a duration: %v", b.IP, b.Remaining, err)
+		}
+	}
+}
+
+func TestGetStatus_ExcludesExpiredBlocks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &Handler{
+		failedAttempts: map[string]*attemptInfo{
+			"203.0.113.7": {count: 0, blockedUntil: time.Now().Add(-1 * time.Minute)},
+		},
+	}
+	engine := gin.New()
+	engine.GET("/v0/management/status", h.GetStatus)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v0/management/status", nil)
+	engine.ServeHTTP(rec, req)
+
+	var resp statusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.BlockedIPs) != 0 {
+		t.Fatalf("expired block leaked into blocked_ips: %+v", resp.BlockedIPs)
+	}
+}
+
 func TestSetWatcherState_ReportsFalse(t *testing.T) {
 	h := &Handler{}
 	h.SetStartedAt(time.Now())
