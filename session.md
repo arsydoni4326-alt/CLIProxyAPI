@@ -208,3 +208,12 @@ The `internals-overview.md` body (sections 1–8) was already fully documented i
 - Docs EN+CN: `docs/EXAMPLE-{CUSTOM-PROVIDER,TRANSLATOR,ACCESS-HOOK}.md` + `_CN.md`.
 - Root `Makefile` `verify-examples` gate (gofmt/vet/build all examples + runtime smoke of offline-capable access-hook & translator). `make verify-examples` green.
 - No changes to `sdk/` packages; root ROADMAP §3.4 SHIPPED.
+
+## 2026-08-16 — Rate Limiting & IP Blocking Tuning (Phase 3.7) SHIPPED
+
+- `internal/config/config_types.go`: added `remote-management.max-failed-attempts` (default 5) + `remote-management.ban-duration` (default 30m) with `MaxFailures()`/`BanWindow()` accessors; defaults in one place.
+- Blocking logic reads the accessors at auth time → hot-tunable via the existing config reload (no new machinery).
+- `GET /v0/management/status` reports `blocked_ips` (`ip`, `remaining`, sorted, expired excluded) — `status_test.go` pins format + expiry exclusion.
+- `handler_test.go`: localhost-IP ban blocks the correct key during ban; remote-enabled threshold ban; custom-threshold edge.
+- `config.example.yaml` documents both keys.
+- Root ROADMAP §3.7 ✅ SHIPPED; docs (ARCHITECTURE/SPECIFICATION) synced; validated `go build`/`go vet`/`gofmt` clean, management suite green (pre-existing `claude_executor` drift aside).

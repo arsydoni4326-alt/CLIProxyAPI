@@ -27,6 +27,13 @@ remote-management:
   # entries with event, method, path, status, client_ip, local, and a pseudonymous
   # actor. Raw keys and request bodies are never logged. Opt-in; defaults to false.
   audit-log-enabled: false
+  # Number of failed management-auth attempts per IP before that IP is temporarily
+  # blocked. Zero (or negative) uses the default of 5.
+  max-failed-attempts: 5
+
+  # How long a blocked IP stays blocked. Accepts duration strings like "30m", "1h",
+  # "2h30m". Empty or invalid values use the default of 30m.
+  ban-duration: "30m"
 
   # Disable the bundled management control panel asset download and HTTP route when true.
   disable-control-panel: false

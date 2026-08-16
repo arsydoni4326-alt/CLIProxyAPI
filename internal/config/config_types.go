@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
 	sdkpluginstore "github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginstore"
@@ -195,6 +196,28 @@ type RemoteManagement struct {
 	// PanelGitHubRepository overrides the GitHub repository used to fetch the management panel asset.
 	// Accepts either a repository URL (https://github.com/org/repo) or an API releases endpoint.
 	PanelGitHubRepository string `yaml:"panel-github-repository"`
+	// MaxFailedAttempts is the number of failed management-auth attempts per IP
+	// before that IP is temporarily blocked. Zero (or negative) uses the default of 5.
+	MaxFailedAttempts int `yaml:"max-failed-attempts"`
+	// BanDuration is how long a blocked IP stays blocked. Accepts duration strings
+	// like "30m", "1h", "2h30m". Empty or invalid values use the default of 30m.
+	BanDuration string `yaml:"ban-duration"`
+}
+
+// MaxFailures returns the configured failure threshold, defaulting to 5.
+func (r RemoteManagement) MaxFailures() int {
+	if r.MaxFailedAttempts > 0 {
+		return r.MaxFailedAttempts
+	}
+	return 5
+}
+
+// BanWindow returns the configured ban duration, defaulting to 30 minutes.
+func (r RemoteManagement) BanWindow() time.Duration {
+	if d, err := time.ParseDuration(r.BanDuration); err == nil && d > 0 {
+		return d
+	}
+	return 30 * time.Minute
 }
 
 // QuotaExceeded defines the behavior when API quota limits are exceeded.
