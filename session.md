@@ -2,11 +2,12 @@
 
 ## Current Objective
 
-Create dedicated documentation (`docs/MERGE-2026-08-15-auth-metadata-mcp-alias.md`) for merge commit `ea8c8b02` (origin/main merged into dev; parents d3e5e535 / 78f0c407), then update this file. Documentation-only task; no source code modifications. The merge covers: auth metadata merge/preservation on re-login (new SDK `sdk/cliproxy/auth/metadata_merge.go`, `internal/misc/credentials.go` nil-source fix, Claude token storage ordering), BIP-39-based Claude MCP tool aliasing, and model registry generation/revision tracking.
+Create dedicated documentation (`docs/MERGE-2026-08-16-main-merge-auth-translator-perf.md`) for merge commit `8a71d358` (origin/main merged into dev; parents 8b8aaea8 / 7efe0a7c), then update this file. Documentation-only task; no source code modifications. The merge covers: session-affinity and rebound-session safety (new SDK `sdk/cliproxy/auth/session_cache.go`), request-scoped 401 fault cooldown exclusions, Anthropic unified rate-limit parsing (`internal/runtime/executor/helps/claude_ratelimit.go`), translator correctness plus batched raw-array allocation performance, OpenAI Responses websocket transcript handling, model registry (max_completion_tokens), and skipping inactive request interceptors.
 
 ### Latest Merge Reviewed
 
-The most recently documented merge is `ea8c8b02` — see `docs/MERGE-2026-08-15-auth-metadata-mcp-alias.md` for the full write-up (auth metadata merge, BIP-39 MCP aliases, model registry, test coverage, 10 future-work recommendations).
+The most recently documented merge is `8a71d358` — see `docs/MERGE-2026-08-16-main-merge-auth-translator-perf.md` for the full write-up (session-affinity and rebound-session safety, request-scoped fault cooldown exclusions, Anthropic unified rate limits, translator dedup and allocation performance, OpenAI Responses websockets, model registry, interceptor skipping; 27 commits / 105 files, 8 future-work recommendations).
+Previous: `ea8c8b02` — see `docs/MERGE-2026-08-15-auth-metadata-mcp-alias.md` (auth metadata merge, BIP-39 MCP aliases, model registry, test coverage, 10 future-work recommendations).
 
 The previously documented staged merge (still summarized in the sections below) spans **69 files, ~5,060 insertions, ~707 deletions** across all major subsystems.
 
