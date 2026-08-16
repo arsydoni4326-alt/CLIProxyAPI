@@ -8,6 +8,7 @@ config.yaml
 
 # Generated content
 bin/*
+backend.sbom.cdx.json
 /logs
 conv/*
 temp/*

@@ -11,7 +11,7 @@ permissions:
 
 env:
   GH_REPO: ${{ github.repository }}
-  GO_VERSION: '1.26.4'
+  GO_VERSION: '1.26.6'
 
 jobs:
   prepare-release:
@@ -668,3 +668,33 @@ jobs:
           fi
           sha256sum "${archives[@]}" | sort -k2 > checksums.txt
           gh release upload "$GITHUB_REF_NAME" checksums.txt --clobber
+
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    needs:
+      - build-hosted
+      - build-linux-glibc
+      - build-linux-no-plugin
+      - build-freebsd
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Fetch tags
+        shell: bash
+        run: git fetch --force --tags
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          path: ./
+          format: cyclonedx-json
+          artifact-name: CLIProxyAPI_sbom
+          output-file: CLIProxyAPI-sbom.cdx.json
+          upload-release-assets: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
