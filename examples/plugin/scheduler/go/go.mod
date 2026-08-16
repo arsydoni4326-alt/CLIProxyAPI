@@ -1,6 +1,6 @@
 module github.com/router-for-me/CLIProxyAPI/v7/examples/plugin/scheduler/go
 
-go 1.26.0
+go 1.26.6
 
 require (
 	github.com/router-for-me/CLIProxyAPI/v7 v7.0.0

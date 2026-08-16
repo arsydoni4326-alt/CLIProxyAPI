@@ -217,3 +217,10 @@ The `internals-overview.md` body (sections 1–8) was already fully documented i
 - `handler_test.go`: localhost-IP ban blocks the correct key during ban; remote-enabled threshold ban; custom-threshold edge.
 - `config.example.yaml` documents both keys.
 - Root ROADMAP §3.7 ✅ SHIPPED; docs (ARCHITECTURE/SPECIFICATION) synced; validated `go build`/`go vet`/`gofmt` clean, management suite green (pre-existing `claude_executor` drift aside).
+
+## 2026-08-16 — Dependency hygiene (Phase 3.8) — SBOM + audit gates
+
+- CI: `pr-test-build.yml` gained a `govulncheck` step (pinned `golang.org/x/vuln/cmd/govulncheck@v1.7.0`, module cache + gobin cached), fails closed; release `release.yaml` gained an `sbom` job (`anchore/sbom-action@v0.24.0`, `dependency-snapshot: false`, `upload-release-assets: true`) emitting `cli-proxy-api-sbom.cdx.json`.
+- Umbrella release (root `.github/workflows/release.yml`) also generates this SBOM + `.sha256` and records it in the release manifest.
+- Root `Makefile` `check-deps` mirrors the gate locally (`go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...` + syft SBOM at `CLIProxyAPI/backend.sbom.cdx.json`).
+- Policy: `docs/DEPENDENCY_POLICY.md`; root ROADMAP §3.8 🟢 in progress. No runtime code changes (net-new deps 0).
