@@ -12,7 +12,7 @@ RUN bun run build && \
  cp dist/index.html /management.html
 
 # Build CPA
-FROM golang:1.26-trixie AS go-builder
+FROM --platform=$BUILDPLATFORM golang:trixie AS go-builder
 WORKDIR /app
 # Define the build arguments passed from GitHub Actions
 ARG APP_VERSION=v0.0.0
