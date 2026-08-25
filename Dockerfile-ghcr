@@ -1,12 +1,6 @@
 FROM alpine/git AS git
 WORKDIR /app
 RUN git clone -b dev https://github.com/arsydoni4326-alt/Cli-Proxy-API-Management-Center.git
-WORKDIR /app/CLIProxyAPI
-COPY . .
-RUN set -eux;\
-    cd /app/CLIProxyAPI;\
-    git describe --tags '--abbrev=0' > version.txt;\
-    git rev-parse --short HEAD > commit.txt
 
 # Build management.html
 FROM oven/bun:1.3.14 AS react-builder
@@ -20,12 +14,23 @@ RUN bun run build && \
 # Build CPA
 FROM golang:1.26-trixie AS go-builder
 WORKDIR /app
+# Define the build arguments passed from GitHub Actions
+ARG APP_VERSION=v0.0.0
+ARG APP_COMMIT=unknown
 RUN set -eux;     apt update -y && apt-get install -y --no-install-recommends       ca-certificates       build-essential       git;     apt-mark showmanual > /savedAptMark.txt
 RUN set -eux;   apt-mark auto '.*' > /dev/null ;	apt-mark manual $(cat /savedAptMark.txt) > /dev/null; 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false;     apt-get clean;     apt-get autoclean;     rm -rf /var/lib/apt/lists/*
-COPY --from=git /app/CLIProxyAPI/go.mod /app/CLIProxyAPI/go.sum ./
+COPY ./go.mod ./go.sum .
 RUN go mod download
-COPY --from=git /app/CLIProxyAPI/. .
-RUN set -eux;   export VERSION=$(cat ./version.txt);   export COMMIT=$(cat ./commit.txt);   export BUILD_DATE="$(date +%Y-%m-%d)";   CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" -o ./CLIProxyAPI ./cmd/server/ ;  chmod +x ./CLIProxyAPI
+COPY . .
+RUN set -eux;   \
+    export BUILD_DATE="$(date +%Y-%m-%d)";   \
+    CGO_ENABLED=1 \
+        GOOS=linux \
+        go build \
+            -buildvcs=false \
+            -ldflags="-s -w -X 'main.Version=${APP_VERSION}' -X 'main.Commit=${APP_COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" \
+            -o ./CLIProxyAPI ./cmd/server/ ;  \
+    chmod +x ./CLIProxyAPI
 
 FROM debian:trixie-slim
 ARG HOME_DIR=/root

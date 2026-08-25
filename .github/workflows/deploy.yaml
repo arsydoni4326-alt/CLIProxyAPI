@@ -26,6 +26,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Extract Git Metadata
+        id: git_meta
+        run: |
+          # Fallback to 'unknown' if no tags exist yet
+          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          COMMIT=$(git rev-parse --short HEAD)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "COMMIT=$COMMIT" >> $GITHUB_OUTPUT
+
       # QEMU is required to emulate the arm64 architecture on the x86 runner
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -53,14 +62,17 @@ jobs:
             type=semver,pattern={{version}}
             type=sha,format=short
 
-      # Step 5: Build the Dockerfile and push it to GHCR
+      # Step 6: Build the Dockerfile and push it to GHCR
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          file: ./Dockerfile-ghcr
           platforms: linux/amd64,linux/arm64
+          file: ./Dockerfile-ghcr
+          build-args: |
+            APP_VERSION=${{ steps.git_meta.outputs.VERSION }}
+            APP_COMMIT=${{ steps.git_meta.outputs.COMMIT }}
           # platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
