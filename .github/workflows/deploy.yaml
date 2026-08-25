@@ -23,10 +23,12 @@ jobs:
       # Step 1: Check out the source code
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # QEMU is required to emulate the arm64 architecture on the x86 runner
-      # - name: Set up QEMU
-      #   uses: docker/setup-qemu-action@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       # Step 2: Set up Docker Buildx (enables caching and multi-platform builds)
       - name: Set up Docker Buildx
@@ -58,8 +60,8 @@ jobs:
           context: .
           push: true
           file: ./Dockerfile-ghcr
-          # platforms: linux/amd64,linux/arm64
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
+          # platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

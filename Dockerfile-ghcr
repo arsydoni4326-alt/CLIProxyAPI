@@ -1,7 +1,8 @@
 FROM alpine/git AS git
 WORKDIR /app
 RUN git clone -b dev https://github.com/arsydoni4326-alt/Cli-Proxy-API-Management-Center.git
-COPY . /app/CLIProxyAPI
+WORKDIR /app/CLIProxyAPI
+COPY . .
 RUN set -eux;\
     cd /app/CLIProxyAPI;\
     git describe --tags '--abbrev=0' > version.txt;\
