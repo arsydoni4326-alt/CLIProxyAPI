@@ -59,8 +59,10 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
+            type=ref,event=tag
             type=sha,format=short
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
 
       # Step 6: Build the Dockerfile and push it to GHCR
       - name: Build and push Docker image
