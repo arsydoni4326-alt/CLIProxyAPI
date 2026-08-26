@@ -60,7 +60,7 @@ RUN set -eux;   \
     apt-get autoclean;     \
     rm -rf /var/lib/apt/lists/*
 
-RUN set -eux;     
+RUN set -eux;     \
     touch ${HOME_DIR}/cpa.sh;    \
     chmod +x ${HOME_DIR}/cpa.sh;     \
     cat <<EOF > ${HOME_DIR}/cpa.sh
