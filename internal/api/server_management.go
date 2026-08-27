@@ -182,6 +182,7 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.DELETE("/oauth-session", s.mgmt.CancelAuthSession)
 
 		mgmt.GET("/status", s.mgmt.GetStatus)
+		mgmt.GET("/quota-status", s.mgmt.GetQuotaStatus)
 	}
 }
 
