@@ -102,6 +102,12 @@ pprof:
 plugins:
   enabled: false
   dir: "plugins"
+  # Audit log for plugin WebSocket events. When true, each event forwarded
+  # to a plugin observer is logged as a structured "plugin_ws_event" entry
+  # with event_type, source_format, model, provider, auth_id, auth_label,
+  # request_id, trace_id, and plugin_id. Payload and metadata are never logged.
+  # Opt-in; defaults to false.
+  audit-log-enabled: false
   # Additional plugin store registries. The built-in official registry is always included.
   # store-sources:
   #   - "https://example.com/cliproxy-plugins/registry.json"

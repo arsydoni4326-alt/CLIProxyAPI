@@ -27,6 +27,10 @@ type PluginsConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
 	// Dir is the plugin discovery directory.
 	Dir string `yaml:"dir" json:"dir"`
+	// AuditLogEnabled logs plugin WebSocket response events as structured
+	// "plugin_ws_event" logrus entries when true. Opt-in; defaults to false.
+	// Payload and metadata are never logged.
+	AuditLogEnabled bool `yaml:"audit-log-enabled" json:"audit-log-enabled"`
 	// StoreSources appends third-party plugin store registries to the built-in official source.
 	StoreSources []string `yaml:"store-sources,omitempty" json:"store-sources,omitempty"`
 	// StoreAuth defines optional auth rules for plugin store registry, metadata, and artifact requests.
