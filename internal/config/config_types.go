@@ -240,6 +240,56 @@ func (r RemoteManagement) BanWindow() time.Duration {
 	return 30 * time.Minute
 }
 
+// QuotaBackoffConfig configures exponential backoff with jitter for repeated
+// quota violations. Omitted fields use sensible defaults.
+type QuotaBackoffConfig struct {
+	// Enabled toggles exponential backoff escalation. When false, the system
+	// uses a fixed Retry-After from the upstream response without escalation.
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// BaseSeconds is the initial cooldown delay in seconds (default 1).
+	BaseSeconds *int `yaml:"base-seconds,omitempty" json:"base-seconds,omitempty"`
+	// MaxSeconds caps the cooldown delay in seconds (default 1800 = 30 minutes).
+	MaxSeconds *int `yaml:"max-seconds,omitempty" json:"max-seconds,omitempty"`
+	// JitterFraction controls the ±random spread applied to each computed
+	// delay (default 0.20 = ±20%). Set to 0 for deterministic delays.
+	JitterFraction *float64 `yaml:"jitter-fraction,omitempty" json:"jitter-fraction,omitempty"`
+}
+
+// Enabled reports whether backoff escalation is active. Nil defaults to true.
+func (c *QuotaBackoffConfig) IsEnabled() bool {
+	if c == nil || c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
+}
+
+// Base returns the configured base cooldown duration. Nil/zero defaults to 1 second.
+func (c *QuotaBackoffConfig) Base() time.Duration {
+	if c == nil || c.BaseSeconds == nil || *c.BaseSeconds <= 0 {
+		return time.Second
+	}
+	return time.Duration(*c.BaseSeconds) * time.Second
+}
+
+// MaxCap returns the configured maximum cooldown duration. Nil/zero defaults to 30 minutes.
+func (c *QuotaBackoffConfig) MaxCap() time.Duration {
+	if c == nil || c.MaxSeconds == nil || *c.MaxSeconds <= 0 {
+		return 30 * time.Minute
+	}
+	return time.Duration(*c.MaxSeconds) * time.Second
+}
+
+// Jitter returns the configured jitter fraction. Nil/negative defaults to 0.20; capped at 1.0.
+func (c *QuotaBackoffConfig) Jitter() float64 {
+	if c == nil || c.JitterFraction == nil || *c.JitterFraction < 0 {
+		return 0.20
+	}
+	if *c.JitterFraction > 1.0 {
+		return 1.0
+	}
+	return *c.JitterFraction
+}
+
 // QuotaExceeded defines the behavior when API quota limits are exceeded.
 // It provides configuration options for automatic failover mechanisms.
 type QuotaExceeded struct {

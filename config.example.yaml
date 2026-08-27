@@ -189,6 +189,17 @@ save-cooldown-status: false
 # Set to 0 to keep the legacy 60-second cooldown; set to -1 to disable transient error cooldowns.
 transient-error-cooldown-seconds: 0
 
+# Exponential backoff with jitter for repeated quota violations (429 rate limits).
+# When enabled, repeated quota failures escalate the cooldown delay using
+# base * 2^level with random jitter, avoiding thundering-herd retries.
+# When disabled (enabled: false), the system uses a fixed Retry-After from the
+# upstream response without escalation — the legacy behavior.
+quota-backoff:
+  enabled: true
+  base-seconds: 1         # initial cooldown delay before exponential growth
+  max-seconds: 1800       # cap (30 minutes)
+  jitter-fraction: 0.20   # ±20% random spread on each computed delay; set to 0 for deterministic
+
 # When true, globally disable Claude request cloaking (the Claude Code CLI disguise and
 # system prompt replacement), so the original system prompt is passed through to Claude as-is.
 # Individual credentials can still override this: a claude-api-key entry via its "cloak.mode",
