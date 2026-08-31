@@ -153,7 +153,7 @@ Full CLIProxyAPI management center with request-level monitoring and cost estima
 - Access: [docs/sdk-access.md](docs/sdk-access.md)
 - Watcher: [docs/sdk-watcher.md](docs/sdk-watcher.md)
 - Internals Overview: [docs/internals-overview.md](docs/internals-overview.md)
-- Merge/Integration Notes: [docs/MERGE-2026-08-16-main-merge-auth-translator-perf.md](docs/MERGE-2026-08-16-main-merge-auth-translator-perf.md) (latest origin/main merge 8a71d358) and [docs/MERGE-2026-08-15-auth-metadata-mcp-alias.md](docs/MERGE-2026-08-15-auth-metadata-mcp-alias.md) (ea8c8b02)
+- Merge/Integration Notes: [docs/MERGE-2026-08-27-auth-translator-plugins-quota.md](docs/MERGE-2026-08-27-auth-translator-plugins-quota.md) (latest origin/main merge 4b5f1eab) and [docs/MERGE-2026-08-16-main-merge-auth-translator-perf.md](docs/MERGE-2026-08-16-main-merge-auth-translator-perf.md) (8a71d358) and [docs/MERGE-2026-08-15-auth-metadata-mcp-alias.md](docs/MERGE-2026-08-15-auth-metadata-mcp-alias.md) (ea8c8b02)
 - Custom Provider Example: `examples/custom-provider`
 
 ## Contributing

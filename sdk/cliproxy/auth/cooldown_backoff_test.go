@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/registry"
+	internalconfig "github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 )
 
@@ -15,6 +16,21 @@ func withQuotaCooldownEnabled(t *testing.T) {
 	prev := quotaCooldownDisabled.Load()
 	quotaCooldownDisabled.Store(false)
 	t.Cleanup(func() { quotaCooldownDisabled.Store(prev) })
+}
+
+// withDeterministicBackoff disables jitter so backoff delays are exactly base * 2^level.
+func withDeterministicBackoff(t *testing.T) {
+	t.Helper()
+	jitter := 0.0
+	prevCfg := quotaBackoffCfg.Load()
+	quotaBackoffCfg.Store(&internalconfig.QuotaBackoffConfig{JitterFraction: &jitter})
+	t.Cleanup(func() {
+		if prevCfg != nil {
+			quotaBackoffCfg.Store(prevCfg)
+		} else {
+			quotaBackoffCfg.Store(&internalconfig.QuotaBackoffConfig{})
+		}
+	})
 }
 
 func quotaResult(authID, model string) Result {
@@ -113,6 +129,7 @@ func TestMarkResultQuotaBackoffEscalatesAfterWindowExpiry(t *testing.T) {
 }
 
 func TestApplyAuthFailureStateQuotaBackoffOncePerWindow(t *testing.T) {
+	withDeterministicBackoff(t)
 	now := time.Now()
 	quotaErr := &Error{Code: "rate_limit", Message: "quota", HTTPStatus: http.StatusTooManyRequests}
 	auth := &Auth{ID: "auth-level-quota"}

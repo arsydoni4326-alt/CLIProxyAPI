@@ -102,6 +102,12 @@ pprof:
 plugins:
   enabled: false
   dir: "plugins"
+  # Audit log for plugin WebSocket events. When true, each event forwarded
+  # to a plugin observer is logged as a structured "plugin_ws_event" entry
+  # with event_type, source_format, model, provider, auth_id, auth_label,
+  # request_id, trace_id, and plugin_id. Payload and metadata are never logged.
+  # Opt-in; defaults to false.
+  audit-log-enabled: false
   # Additional plugin store registries. The built-in official registry is always included.
   # store-sources:
   #   - "https://example.com/cliproxy-plugins/registry.json"
@@ -188,6 +194,17 @@ save-cooldown-status: false
 # Cooldown duration in seconds for transient upstream errors (408/500/502/503/504).
 # Set to 0 to keep the legacy 60-second cooldown; set to -1 to disable transient error cooldowns.
 transient-error-cooldown-seconds: 0
+
+# Exponential backoff with jitter for repeated quota violations (429 rate limits).
+# When enabled, repeated quota failures escalate the cooldown delay using
+# base * 2^level with random jitter, avoiding thundering-herd retries.
+# When disabled (enabled: false), the system uses a fixed Retry-After from the
+# upstream response without escalation — the legacy behavior.
+quota-backoff:
+  enabled: true
+  base-seconds: 1         # initial cooldown delay before exponential growth
+  max-seconds: 1800       # cap (30 minutes)
+  jitter-fraction: 0.20   # ±20% random spread on each computed delay; set to 0 for deterministic
 
 # When true, globally disable Claude request cloaking (the Claude Code CLI disguise and
 # system prompt replacement), so the original system prompt is passed through to Claude as-is.

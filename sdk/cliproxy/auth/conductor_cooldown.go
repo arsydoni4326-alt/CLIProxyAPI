@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"sort"
 	"strings"
@@ -142,6 +143,7 @@ func (m *Manager) setConfigSnapshotLocked(cfg *internalconfig.Config) bool {
 		m.homeSessionAliases.clear()
 	}
 	m.runtimeConfig.Store(cfg)
+	SetQuotaBackoffConfig(&cfg.QuotaBackoff)
 	clearedCooldowns := m.clearDisabledCooldownStates(cfg)
 	if clearedCooldowns && oldCooldownStore != nil {
 		m.mu.Lock()
@@ -834,10 +836,21 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 							var next time.Time
 							backoffLevel := state.Quota.BackoffLevel
 							if !disableCooling {
+								// Always compute the escalated delay so BackoffLevel advances
+								// even when the provider supplies Retry-After. This prevents
+								// repeated 429s with Retry-After from stalling escalation.
+								computedNext, computedLevel := quotaCooldownAfterFailure(state.Quota, now)
+								backoffLevel = computedLevel
 								if result.RetryAfter != nil {
-									next = now.Add(*result.RetryAfter)
+									// Honor the provider hint as a floor — use whichever is later.
+									retryDelay := now.Add(*result.RetryAfter)
+									if retryDelay.After(computedNext) {
+										next = retryDelay
+									} else {
+										next = computedNext
+									}
 								} else {
-									next, backoffLevel = quotaCooldownAfterFailure(state.Quota, now)
+									next = computedNext
 								}
 								if state.Quota.Exceeded && state.Quota.NextRecoverAt.After(next) {
 									next = state.Quota.NextRecoverAt
@@ -2080,19 +2093,40 @@ func quotaCooldownAfterFailure(quota QuotaState, now time.Time) (time.Time, int)
 }
 
 // nextQuotaCooldown returns the next cooldown duration and updated backoff level for repeated quota errors.
+// It applies exponential backoff with configurable jitter. When backoff is disabled via config,
+// it returns 0 with the current level unchanged.
 func nextQuotaCooldown(prevLevel int, disableCooling bool) (time.Duration, int) {
 	if prevLevel < 0 {
 		prevLevel = 0
 	}
-	if disableCooling {
+	cfg := backoffConfig()
+	if disableCooling || !cfg.IsEnabled() {
 		return 0, prevLevel
 	}
-	cooldown := quotaBackoffBase * time.Duration(1<<prevLevel)
-	if cooldown < quotaBackoffBase {
-		cooldown = quotaBackoffBase
+	base := cfg.Base()
+	max := cfg.MaxCap()
+
+	cooldown := base * time.Duration(1<<prevLevel)
+	if cooldown < base {
+		cooldown = base
 	}
-	if cooldown >= quotaBackoffMax {
-		return quotaBackoffMax, prevLevel
+	if cooldown >= max {
+		return max, prevLevel
 	}
+
+	// Apply jitter before advancing level so the jittered value is used at this level.
+	jitterFrac := cfg.Jitter()
+	if jitterFrac > 0 {
+		jitterRange := float64(cooldown) * jitterFrac
+		jitter := (rand.Float64()*2 - 1) * jitterRange // [-range, +range]
+		cooldown = time.Duration(float64(cooldown) + jitter)
+		if cooldown < base {
+			cooldown = base
+		}
+		if cooldown > max {
+			cooldown = max
+		}
+	}
+
 	return cooldown, prevLevel + 1
 }

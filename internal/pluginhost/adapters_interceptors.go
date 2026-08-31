@@ -182,6 +182,23 @@ func (h *Host) ObserveWebSocketResponseEventExcept(ctx context.Context, event pl
 		next := event
 		next.Payload = bytes.Clone(event.Payload)
 		next.Metadata = cloneInterceptorMetadata(event.Metadata)
+		// Optional plugin event audit log: record per-plugin WS events when
+		// enabled. Opt-in via plugins.audit-log-enabled. Payload and metadata
+		// are never logged.
+		if h.runtimeConfig != nil && h.runtimeConfig.Plugins.AuditLogEnabled {
+			log.WithFields(log.Fields{
+				"event":         "plugin_ws_event",
+				"plugin_id":     record.id,
+				"event_type":    event.EventType,
+				"source_format": event.SourceFormat,
+				"model":         event.Model,
+				"provider":      event.Provider,
+				"auth_id":       event.AuthID,
+				"auth_label":    event.AuthLabel,
+				"request_id":    event.RequestID,
+				"trace_id":      event.TraceID,
+			}).Info("plugin_ws_event")
+		}
 		h.callWebSocketResponseObserver(ctx, record, observer, next)
 	}
 }

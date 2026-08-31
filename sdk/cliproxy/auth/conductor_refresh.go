@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	internalconfig "github.com/router-for-me/CLIProxyAPI/v7/internal/config"
@@ -30,10 +31,40 @@ const (
 	// wasn't updated). Without this guard, the auto-refresh loop can tight-loop and
 	// burn CPU at idle.
 	refreshIneffectiveBackoff = 30 * time.Second
-	quotaBackoffBase          = time.Second
-	quotaBackoffMax           = 30 * time.Minute
-	transientErrorCooldown    = time.Minute
+	transientErrorCooldown   = time.Minute
 )
+
+// quotaBackoffCfg holds the active backoff configuration, atomically updated on config reload.
+// Accessed via backoffConfig() from quota-backoff calculation functions.
+var quotaBackoffCfg atomic.Pointer[internalconfig.QuotaBackoffConfig]
+
+func init() {
+	// Default config ensures backoff is enabled with standard parameters.
+	quotaBackoffCfg.Store(&internalconfig.QuotaBackoffConfig{})
+}
+
+// SetQuotaBackoffConfig publishes a new backoff configuration for runtime use.
+func SetQuotaBackoffConfig(cfg *internalconfig.QuotaBackoffConfig) {
+	if cfg == nil {
+		cfg = &internalconfig.QuotaBackoffConfig{}
+	}
+	quotaBackoffCfg.Store(cfg)
+}
+
+// backoffConfig returns the current backoff configuration snapshot.
+func backoffConfig() *internalconfig.QuotaBackoffConfig {
+	cfg := quotaBackoffCfg.Load()
+	if cfg == nil {
+		return &internalconfig.QuotaBackoffConfig{}
+	}
+	return cfg
+}
+
+// GetBackoffConfig returns the current backoff configuration snapshot.
+// Exported for use by management API handlers.
+func GetBackoffConfig() *internalconfig.QuotaBackoffConfig {
+	return backoffConfig()
+}
 
 // StartAutoRefresh launches a background loop that evaluates auth freshness
 // every few seconds and triggers refresh operations when required.

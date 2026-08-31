@@ -159,6 +159,7 @@ func normalizeFlowModel(model string) string {
 func flowHandlerTypeForPath(path string) string {
 	switch {
 	case strings.Contains(path, "/chat/completions"),
+		strings.Contains(path, "/completions"),
 		strings.Contains(path, "/responses"),
 		strings.Contains(path, "/codex"):
 		return "openai"
@@ -354,17 +355,32 @@ func sniffFlowModel(c *gin.Context, hub *flowHub) {
 	if idle || c == nil || c.Request == nil || c.Request.Body == nil {
 		return
 	}
-	if ct := c.Request.Header.Get("Content-Type"); !strings.Contains(ct, "json") {
+	ct := strings.ToLower(c.Request.Header.Get("Content-Type"))
+	// Accept JSON content types: application/json, application/json; charset=utf-8,
+	// text/json, or any type ending with +json (e.g. application/vnd.api+json).
+	// Empty content-type is also accepted for requests that omit the header
+	// entirely (some CLI tools and non-standard clients do this).
+	isJSON := strings.Contains(ct, "json") ||
+		strings.Contains(ct, "text/json") ||
+		strings.HasSuffix(ct, "+json") ||
+		ct == ""
+	if !isJSON {
 		return
 	}
-	// Never risk truncating an oversize or unknown-length body: LimitReader would
-	// silently drop the tail before restore. Only bodies small enough to fit the
-	// cap (per declared Content-Length) are sniffed.
-	if c.Request.ContentLength < 0 || c.Request.ContentLength > flowModelSniffCap {
+	// For chunked or unknown-length bodies, attempt to read a small prefix
+	// instead of rejecting outright. This captures models from streaming/
+	// chunked requests where Content-Length is -1 (common for large prompts
+	// or multipart-like payloads). The prefix is small enough to avoid
+	// memory pressure and is always restored.
+	if c.Request.ContentLength > flowModelSniffCap {
 		return
+	}
+	limit := int64(flowModelSniffCap)
+	if c.Request.ContentLength > 0 && c.Request.ContentLength < limit {
+		limit = c.Request.ContentLength
 	}
 
-	body, err := io.ReadAll(io.LimitReader(c.Request.Body, flowModelSniffCap))
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, limit))
 	_ = c.Request.Body.Close()
 	c.Request.Body = io.NopCloser(bytes.NewReader(body))
 	c.Request.ContentLength = int64(len(body))
@@ -380,8 +396,11 @@ func sniffFlowModel(c *gin.Context, hub *flowHub) {
 
 // flowVizMiddleware mirrors per-request metadata into the hub after the handler
 // completes. It does not read the request body, so model is empty unless a
-// handler sets the "flow_model" context key. Latency is derived from the trace
-// start time recorded by the trace middleware.
+// handler sets the "flow_model" context key. When the model is still empty after
+// the handler runs, the middleware consults the model registry's default for the
+// request's API family so the pulse still routes to a meaningful node instead
+// of showing no animation. Latency is derived from the trace start time
+// recorded by the trace middleware.
 func flowVizMiddleware(hub *flowHub) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -391,6 +410,15 @@ func flowVizMiddleware(hub *flowHub) gin.HandlerFunc {
 		status := c.Writer.Status()
 		model, _ := c.Get("flow_model")
 		modelStr, _ := model.(string)
+
+		// Last-resort: when the body sniff + conversation cache both missed,
+		// consult the registry default so the pulse lands on a real model node
+		// rather than the catch-all or nowhere. This is safe here (after c.Next)
+		// because it only reads the path and registry state, not the body.
+		if modelStr == "" {
+			modelStr = flowRegistryFallbackModel(c)
+		}
+
 		hub.publish(flowEvent{
 			ID:        logging.GetGinRequestID(c),
 			Timestamp: start.UnixMilli(),

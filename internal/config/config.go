@@ -89,6 +89,9 @@ type Config struct {
 	// failover or immediate additional rounds allowed by RequestRetry.
 	MaxRetryInterval int `yaml:"max-retry-interval" json:"max-retry-interval"`
 
+	// QuotaBackoff configures exponential backoff with jitter for repeated quota violations.
+	QuotaBackoff QuotaBackoffConfig `yaml:"quota-backoff" json:"quota-backoff"`
+
 	// QuotaExceeded defines the behavior when a quota is exceeded.
 	QuotaExceeded QuotaExceeded `yaml:"quota-exceeded" json:"quota-exceeded"`
 
