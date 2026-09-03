@@ -37,6 +37,16 @@ func SetTransientErrorCooldownSeconds(seconds int) {
 	transientErrorCooldownSeconds.Store(int64(seconds))
 }
 
+// QuotaCooldownDisabledForAuth returns whether cooling is disabled for the auth under global settings.
+func QuotaCooldownDisabledForAuth(auth *Auth) bool {
+	return quotaCooldownDisabledForAuth(auth)
+}
+
+// QuotaCooldownDisabledForAuthWithConfig returns whether cooling is disabled for the auth with the given config.
+func QuotaCooldownDisabledForAuthWithConfig(auth *Auth, cfg *internalconfig.Config) bool {
+	return quotaCooldownDisabledForAuthWithConfig(auth, cfg)
+}
+
 func quotaCooldownDisabledForAuth(auth *Auth) bool {
 	return quotaCooldownDisabledForAuthWithConfig(auth, nil)
 }
@@ -842,13 +852,11 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 								computedNext, computedLevel := quotaCooldownAfterFailure(state.Quota, now)
 								backoffLevel = computedLevel
 								if result.RetryAfter != nil {
-									// Honor the provider hint as a floor — use whichever is later.
-									retryDelay := now.Add(*result.RetryAfter)
-									if retryDelay.After(computedNext) {
-										next = retryDelay
-									} else {
-										next = computedNext
+									cooldown := *result.RetryAfter
+									if cooldown < minQuotaCooldownFloor {
+										cooldown = minQuotaCooldownFloor
 									}
+									next = now.Add(cooldown)
 								} else {
 									next = computedNext
 								}
@@ -964,10 +972,11 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 }
 
 func (m *Manager) updateSessionAffinity(result Result) {
-	if m == nil || m.selector == nil {
+	if m == nil {
 		return
 	}
-	if affinity, ok := m.selector.(interface {
+	sel := m.Selector()
+	if affinity, ok := sel.(interface {
 		OnResult(Result)
 	}); ok && affinity != nil {
 		affinity.OnResult(result)
@@ -1513,7 +1522,11 @@ func hasUnauthorizedAuthFailure(auth *Auth) bool {
 	if auth == nil || auth.LastError == nil {
 		return false
 	}
-	return auth.LastError.StatusCode() == http.StatusUnauthorized || strings.EqualFold(auth.LastError.Code, "unauthorized")
+	if auth.Unavailable && auth.Status == StatusError && auth.NextRefreshAfter.IsZero() &&
+		(auth.LastError.StatusCode() == http.StatusUnauthorized || strings.EqualFold(auth.LastError.Code, "unauthorized")) {
+		return true
+	}
+	return false
 }
 
 func refreshErrorFromError(err error) *Error {
@@ -2048,7 +2061,11 @@ func applyAuthFailureState(auth *Auth, resultErr *Error, retryAfter *time.Durati
 		var next time.Time
 		if !disableCooling {
 			if retryAfter != nil {
-				next = now.Add(*retryAfter)
+				cooldown := *retryAfter
+				if cooldown < minQuotaCooldownFloor {
+					cooldown = minQuotaCooldownFloor
+				}
+				next = now.Add(cooldown)
 			} else {
 				next, auth.Quota.BackoffLevel = quotaCooldownAfterFailure(auth.Quota, now)
 			}
