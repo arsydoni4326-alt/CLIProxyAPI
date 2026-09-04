@@ -331,6 +331,9 @@ func TestHandlerRejectsWrongPathAndMethod(t *testing.T) {
 	}
 	if allow := postResp.Header.Get("Allow"); allow != http.MethodGet {
 		t.Fatalf("expected Allow GET, got %q", allow)
+	}
+}
+
 func newTestWebsocketPair(t *testing.T) (*session, *websocket.Conn, func()) {
 	t.Helper()
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
