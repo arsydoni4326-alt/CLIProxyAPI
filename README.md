@@ -134,6 +134,10 @@ CLIProxyAPI Guides: [https://help.router-for.me/](https://help.router-for.me/)
 
 see [MANAGEMENT_API.md](https://help.router-for.me/management/api)
 
+### Provider Key Tests and Per-Credential Proxies
+
+Provider-key tests made through the management API honor the selected credential's `proxy-url`, including `direct` and `none`, before falling back to the global `proxy-url`. When a test request does not provide an `auth_index`, the API can resolve a credential from its `Authorization: Bearer`, `X-Api-Key`, or `X-Goog-Api-Key` header only if that API key and target base URL identify exactly one configured credential. This prevents a shared API key from applying another provider's proxy configuration.
+
 ## Usage Statistics
 
 Since v6.10.0, CLIProxyAPI and [CPAMC](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) no longer ship built-in usage statistics. If you need usage statistics, use:

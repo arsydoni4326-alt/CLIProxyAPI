@@ -1,6 +1,7 @@
 package management
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/config"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/watcher/synthesizer"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/auth"
 )
 
 func TestGetOpenAICompatIncludesDisableCooling(t *testing.T) {
@@ -63,5 +66,46 @@ func TestGetOpenAICompatIncludesDisableCooling(t *testing.T) {
 	}
 	if body.OpenAICompatibility[0].RequestRetry == nil || *body.OpenAICompatibility[0].RequestRetry != 0 {
 		t.Fatalf("expected request-retry to be present and 0, got %#v", body.OpenAICompatibility[0].RequestRetry)
+	}
+}
+
+func TestOpenAICompatKeyAuthIndexMatchesSynthesizedCredentialAfterProxyChange(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{
+		OpenAICompatibility: []config.OpenAICompatibility{
+			{
+				Name:    "Local Router",
+				BaseURL: "http://127.0.0.1:20128/v1",
+				Prefix:  "local",
+				APIKeyEntries: []config.OpenAICompatibilityAPIKey{
+					{APIKey: "direct-test-key", ProxyURL: "direct"},
+				},
+			},
+		},
+	}
+	synthesized, errSynthesize := synthesizer.NewConfigSynthesizer().Synthesize(&synthesizer.SynthesisContext{
+		Config:      cfg,
+		IDGenerator: synthesizer.NewStableIDGenerator(),
+	})
+	if errSynthesize != nil {
+		t.Fatalf("synthesize config credentials: %v", errSynthesize)
+	}
+	if len(synthesized) != 1 {
+		t.Fatalf("synthesized credentials = %d, want 1", len(synthesized))
+	}
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	if _, errRegister := manager.Register(context.Background(), synthesized[0]); errRegister != nil {
+		t.Fatalf("register synthesized credential: %v", errRegister)
+	}
+	h := &Handler{cfg: cfg, authManager: manager}
+
+	entries := h.openAICompatibilityWithAuthIndex()
+	if len(entries) != 1 || len(entries[0].APIKeyEntries) != 1 {
+		t.Fatalf("OpenAI compatibility entries = %#v, want one credential", entries)
+	}
+	if got, want := entries[0].APIKeyEntries[0].AuthIndex, synthesized[0].EnsureIndex(); got != want {
+		t.Fatalf("auth index = %q, want %q", got, want)
 	}
 }

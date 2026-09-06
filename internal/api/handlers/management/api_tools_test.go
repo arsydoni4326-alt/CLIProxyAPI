@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -69,6 +70,107 @@ func TestAPICallTransportDirectBypassesGlobalProxy(t *testing.T) {
 	}
 	if httpTransport.Proxy != nil {
 		t.Fatal("expected direct transport to disable proxy function")
+	}
+}
+
+func TestAPICallWithoutAuthIndexUsesMatchingCredentialProxy(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("upstream path = %q, want /v1/models", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer direct-test-key" {
+			t.Fatalf("Authorization = %q, want Bearer direct-test-key", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	auth := &coreauth.Auth{
+		ID:       "openai-compatible-local-router",
+		Provider: "openai-compatible-local-router",
+		ProxyURL: "direct",
+		Attributes: map[string]string{
+			"api_key":  "direct-test-key",
+			"base_url": upstream.URL + "/v1",
+		},
+	}
+	if _, errRegister := manager.Register(context.Background(), auth); errRegister != nil {
+		t.Fatalf("register auth: %v", errRegister)
+	}
+
+	h := &Handler{
+		cfg: &config.Config{
+			SDKConfig: sdkconfig.SDKConfig{ProxyURL: "http://127.0.0.1:1"},
+		},
+		authManager: manager,
+	}
+	router := gin.New()
+	router.POST("/", h.APICall)
+
+	body := `{"method":"GET","url":"` + upstream.URL + `/v1/models","header":{"Authorization":"Bearer direct-test-key"}}`
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status code = %d, want %d; body = %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+
+	var response apiCallResponse
+	if errDecode := json.NewDecoder(recorder.Body).Decode(&response); errDecode != nil {
+		t.Fatalf("decode response: %v", errDecode)
+	}
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("upstream status code = %d, want %d", response.StatusCode, http.StatusNoContent)
+	}
+}
+
+func TestAuthForAPICallRequiresUniqueKeyAndTargetBaseMatch(t *testing.T) {
+	t.Parallel()
+
+	manager := coreauth.NewManager(nil, nil, nil)
+	for _, auth := range []*coreauth.Auth{
+		{
+			ID:       "first",
+			Provider: "first-provider",
+			Attributes: map[string]string{
+				"api_key":  "shared-key",
+				"base_url": "https://first.example.com/v1",
+			},
+		},
+		{
+			ID:       "second",
+			Provider: "second-provider",
+			Attributes: map[string]string{
+				"api_key":  "shared-key",
+				"base_url": "https://second.example.com/v1",
+			},
+		},
+	} {
+		if _, errRegister := manager.Register(context.Background(), auth); errRegister != nil {
+			t.Fatalf("register auth %q: %v", auth.ID, errRegister)
+		}
+	}
+	h := &Handler{authManager: manager}
+
+	targetURL, errParse := url.Parse("https://first.example.com/v1/models")
+	if errParse != nil {
+		t.Fatalf("parse target URL: %v", errParse)
+	}
+	if got := h.authForAPICall(map[string]string{"Authorization": "Bearer shared-key"}, targetURL); got == nil || got.ID != "first" {
+		t.Fatalf("matching auth = %#v, want first", got)
+	}
+
+	otherTargetURL, errParse := url.Parse("https://unrelated.example.com/v1/models")
+	if errParse != nil {
+		t.Fatalf("parse unrelated target URL: %v", errParse)
+	}
+	if got := h.authForAPICall(map[string]string{"Authorization": "Bearer shared-key"}, otherTargetURL); got != nil {
+		t.Fatalf("unrelated target resolved auth %#v, want nil", got)
 	}
 }
 
