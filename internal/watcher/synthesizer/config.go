@@ -85,7 +85,7 @@ func (s *ConfigSynthesizer) synthesizeGeminiKeyEntries(ctx *SynthesisContext, en
 		}
 		prefix := strings.TrimSpace(entry.Prefix)
 		proxyURL := strings.TrimSpace(entry.ProxyURL)
-		id, token := idGen.Next(idKind, key, base, proxyURL, prefix, config.FormatSortedHeaders(entry.Headers))
+		id, token := idGen.Next(idKind, key, base, prefix, config.FormatSortedHeaders(entry.Headers))
 		attrs := map[string]string{
 			"source":       fmt.Sprintf("config:%s[%s]", sourceName, token),
 			"config_index": strconv.Itoa(i),
@@ -147,7 +147,7 @@ func (s *ConfigSynthesizer) synthesizeClaudeKeys(ctx *SynthesisContext) []*corea
 		}
 		prefix := strings.TrimSpace(ck.Prefix)
 		proxyURL := strings.TrimSpace(ck.ProxyURL)
-		id, token := idGen.Next("claude:apikey", key, base, proxyURL, prefix, config.FormatSortedHeaders(ck.Headers))
+		id, token := idGen.Next("claude:apikey", key, base, prefix, config.FormatSortedHeaders(ck.Headers))
 		attrs := map[string]string{
 			"source":       fmt.Sprintf("config:claude[%s]", token),
 			"config_index": strconv.Itoa(i),
@@ -223,8 +223,7 @@ func (s *ConfigSynthesizer) synthesizeCodexStyleKeys(ctx *SynthesisContext, entr
 			continue
 		}
 		prefix := strings.TrimSpace(entry.Prefix)
-		proxyURL := strings.TrimSpace(entry.ProxyURL)
-		id, token := idGen.Next(provider+":apikey", key, baseURL, proxyURL, prefix, config.FormatSortedHeaders(entry.Headers))
+		id, token := idGen.Next(provider+":apikey", key, baseURL, prefix, config.FormatSortedHeaders(entry.Headers))
 		attrs := map[string]string{
 			"source":       fmt.Sprintf("config:%s[%s]", provider, token),
 			"config_index": strconv.Itoa(i),
@@ -304,7 +303,7 @@ func (s *ConfigSynthesizer) synthesizeOpenAICompat(ctx *SynthesisContext) []*cor
 			key := strings.TrimSpace(entry.APIKey)
 			proxyURL := strings.TrimSpace(entry.ProxyURL)
 			idKind := fmt.Sprintf("openai-compatibility:%s", providerName)
-			id, token := idGen.Next(idKind, key, base, proxyURL)
+			id, token := idGen.Next(idKind, key, base, prefix)
 			attrs := map[string]string{
 				"source":       fmt.Sprintf("config:%s[%s]", providerName, token),
 				"base_url":     base,
@@ -407,7 +406,7 @@ func (s *ConfigSynthesizer) synthesizeVertexCompat(ctx *SynthesisContext) []*cor
 		prefix := strings.TrimSpace(compat.Prefix)
 		proxyURL := strings.TrimSpace(compat.ProxyURL)
 		idKind := "vertex:apikey"
-		id, token := idGen.Next(idKind, key, base, proxyURL)
+		id, token := idGen.Next(idKind, key, base, prefix)
 		attrs := map[string]string{
 			"source":       fmt.Sprintf("config:vertex-apikey[%s]", token),
 			"base_url":     base,
