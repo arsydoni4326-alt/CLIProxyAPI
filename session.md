@@ -31,3 +31,28 @@
 - `go build -o test-output ./cmd/server && rm test-output` passed.
 - Restored two missing closing braces in the existing wsrelay test function,
   which had prevented the full test suite from compiling that package.
+
+## Update (2026-09-06): restored metadata keys and SessionInfo.IsFork
+
+- Symptom: `go build ./cmd/server` failed with
+  `undefined: cliproxyexecutor.ParentSessionIDMetadataKey` in
+  `sdk/cliproxy/session/identity.go` (and, once unblocked, further undefined
+  references in `sdk/cliproxy/auth/selector.go` and `info.go`).
+- Root cause: commit `101ca51f` (Merkle LCP session affinity / session tree)
+  rewrote `sdk/cliproxy/executor/types.go` and accidentally dropped three
+  constants that were still referenced:
+  `ParentSessionIDMetadataKey` ("parent_session_id"),
+  `IsForkMetadataKey` ("is_fork"), and
+  `LCPAccessGenerationMetadataKey` ("lcp_access_generation"). It also dropped
+  the `IsFork bool` field from `sdk/cliproxy/session/info.go`
+  `SessionInfo` while `info.go` still assigned `info.IsFork = true`.
+- Fix: restored the three constants (with their original doc comments) to the
+  const block in `sdk/cliproxy/executor/types.go`, and re-added `IsFork bool`
+  to `SessionInfo`. `IsSubagent` was not restored because no current code or
+  test references it.
+- Decision: restoring rather than renaming — the string values
+  ("parent_session_id", "is_fork", "lcp_access_generation") are part of the
+  metadata wire surface used across session identity, auth selection, and
+  usage reporting.
+- Verification: `go build ./...` exit 0; `go test ./sdk/cliproxy/...` all
+  packages pass; `gofmt -l` clean on both edited files.

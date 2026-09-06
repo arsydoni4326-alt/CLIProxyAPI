@@ -23,6 +23,7 @@ type SessionInfo struct {
 	AuthID          string         `json:"auth_id,omitempty"`
 	Provider        string         `json:"provider,omitempty"`
 	Model           string         `json:"model,omitempty"`
+	IsFork          bool           `json:"is_fork,omitempty"`
 	Metadata        map[string]any `json:"metadata,omitempty"`
 }
 
