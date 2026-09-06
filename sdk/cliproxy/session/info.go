@@ -2,8 +2,11 @@
 package session
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/util"
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
@@ -458,8 +461,8 @@ func ExtractSessionInfo(headers http.Header, payload []byte, metadata map[string
 		if pck != "" {
 			info.ClientType = "generic"
 			info.SessionID = "pck:" + pck
-			if conversationID != "" {
-				info.ParentSessionID = conversationID
+			if parentCandidate != "" && parentCandidate != pck {
+				info.ParentSessionID = "pck:" + parentCandidate
 				info.AgentName = "subagent"
 			} else {
 				info.AgentName = "main"
@@ -520,12 +523,76 @@ func ExtractSessionInfo(headers http.Header, payload []byte, metadata map[string
 		}
 	}
 
+	// 8. LCPAffinitySessionIDMetadataKey
+	if lcpID, ok := metadata[cliproxyexecutor.LCPAffinitySessionIDMetadataKey].(string); ok {
+		if lcpID = normalizedSessionCandidate(lcpID); lcpID != "" {
+			info.ClientType = "lcp"
+			info.SessionID = lcpID
+			if parentID, okParent := metadata[cliproxyexecutor.ParentSessionIDMetadataKey].(string); okParent {
+				if parentID = normalizedSessionCandidate(parentID); parentID != "" && parentID != lcpID {
+					info.ParentSessionID = parentID
+					info.AgentName = "subagent"
+					info.IsFork = true
+				} else {
+					info.AgentName = "main"
+				}
+			} else {
+				info.AgentName = "main"
+			}
+			return finalizeSessionInfo(info)
+		}
+	}
+
 	return SessionInfo{}, false
+}
+
+func isBodyForkCandidate(root, reqRoot gjson.Result, hasNestedReq bool) bool {
+	if !root.Exists() {
+		return false
+	}
+	for _, k := range []string{
+		"forked_from_thread_id", "forked_from_id",
+		"metadata.forked_from_thread_id", "metadata.forked_from_id",
+		"extra_body.forked_from_thread_id", "extra_body.forked_from_id",
+	} {
+		if val := normalizedSessionCandidate(root.Get(k).String()); val != "" {
+			return true
+		}
+		if hasNestedReq {
+			if val := normalizedSessionCandidate(reqRoot.Get(k).String()); val != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// BoundSessionIdentity bounds an identifier to <= 256 bytes safely,
+// preserving uniqueness via SHA256 and guarding against splitting multibyte UTF-8 characters.
+func BoundSessionIdentity(id string) string {
+	if len(id) <= 256 {
+		return id
+	}
+	sum := sha256.Sum256([]byte(id))
+	hashHex := hex.EncodeToString(sum[:]) // 64 bytes
+	prefixLen := 255 - 1 - len(hashHex)   // 190 bytes
+	if prefixLen > len(id) {
+		prefixLen = len(id)
+	}
+	prefix := id[:prefixLen]
+	for !utf8.ValidString(prefix) && len(prefix) > 0 {
+		prefix = prefix[:len(prefix)-1]
+	}
+	return prefix + "#" + hashHex
 }
 
 func finalizeSessionInfo(info SessionInfo) (SessionInfo, bool) {
 	if info.SessionID == "" {
 		return SessionInfo{}, false
+	}
+	info.SessionID = BoundSessionIdentity(info.SessionID)
+	if info.ParentSessionID != "" {
+		info.ParentSessionID = BoundSessionIdentity(info.ParentSessionID)
 	}
 	if info.AgentName == "" {
 		info.AgentName = "main"
