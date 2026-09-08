@@ -52,7 +52,7 @@ case "$choice" in
     echo "Building the Docker image..."
     docker build \
       -t ${IMAGE_NAME} \
-      --no-cache
+      --no-cache \
       --build-arg CPAM_VERSION="${CPAM_VERSION}" \
       --build-arg CPAM_COMMIT="${CPAM_COMMIT}" \
       --build-arg CPA_VERSION="${CPA_VERSION}" \
