@@ -1,37 +1,88 @@
-FROM golang:1.26.6-bookworm AS builder
-
+FROM alpine/git AS git
 WORKDIR /app
+RUN git clone -b main https://github.com/arsydoni4326-alt/Cli-Proxy-API-Management-Center.git
 
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
+# Build management.html
+FROM oven/bun:1.3.14 AS react-builder
+WORKDIR /app
+COPY --from=git /app/Cli-Proxy-API-Management-Center/package.json /app/Cli-Proxy-API-Management-Center/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY --from=git /app/Cli-Proxy-API-Management-Center/. .
+RUN bun run build && \ 
+ cp dist/index.html /app/management.html
 
+# Build CPA
+FROM --platform=$BUILDPLATFORM golang:trixie AS go-builder
+WORKDIR /app
+# Define the build arguments passed from GitHub Actions
+ARG APP_VERSION=v0.0.0
+ARG APP_COMMIT=unknown
+RUN set -eux;     \
+    apt update -y; \
+    apt install -y --no-install-recommends       \
+        ca-certificates       \
+        build-essential       \
+        git;     \
+    apt-mark showmanual > /savedAptMark.txt
+RUN set -eux;   \
+    apt-mark auto '.*' > /dev/null ;	\
+    apt-mark manual $(cat /savedAptMark.txt) > /dev/null; 	\
+    apt purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false;     \
+    apt clean;     \
+    apt autoclean;     \
+    rm -rf /var/lib/apt/lists/*
 COPY go.mod go.sum ./
-
 RUN go mod download
-
 COPY . .
+RUN set -eux;   \
+    export BUILD_DATE="$(date +%Y-%m-%d)";   \
+    CGO_ENABLED=1 \
+        GOOS=linux \
+        go build \
+            -buildvcs=false \
+            -ldflags="-s -w -X 'main.Version=${APP_VERSION}' -X 'main.Commit=${APP_COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" \
+            -o ./CLIProxyAPI ./cmd/server/ ;  \
+    chmod +x ./CLIProxyAPI
 
-ARG VERSION=dev
-ARG COMMIT=none
-ARG BUILD_DATE=unknown
-
-RUN CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" -o ./CLIProxyAPI ./cmd/server/
-
-FROM debian:bookworm
-
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata ca-certificates && rm -rf /var/lib/apt/lists/*
-
-RUN mkdir /CLIProxyAPI
-
-COPY --from=builder ./app/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
-
-COPY config.example.yaml /CLIProxyAPI/config.example.yaml
-
-WORKDIR /CLIProxyAPI
-
+FROM debian:trixie-slim
+ARG HOME_DIR=/root
+ARG CLIPROXY_INSTALLDIR=${HOME_DIR}/.cliproxyapi/bin
+ENV TZ="Asia/Jakarta"
+ENV PATH=$HOME_DIR/.cliproxyapi/bin:$PATH
+SHELL ["/bin/bash", "-c"]
+WORKDIR ${HOME_DIR}
 EXPOSE 8317
+RUN set -eux; 	\
+    [ ! -f /etc/localtime ] && ln -s /usr/share/zoneinfo/$TZ /etc/localtime; 	\
+    echo $TZ > /etc/timezone; 	\
+    apt-get update
+RUN set -eux;     \
+    apt install -y --no-install-recommends \
+        tzdata ca-certificates;     \
+    apt-mark showmanual > /savedAptMark.txt
 
-ENV TZ=Asia/Shanghai
+# install cliproxy
+COPY --from=go-builder /app/CLIProxyAPI  ${CLIPROXY_INSTALLDIR}/cli-proxy-api
+COPY --from=react-builder /app/management.html ${CLIPROXY_INSTALLDIR}/static/management.html
+RUN set -eux;   \
+    apt-mark auto '.*' > /dev/null ;	\
+    apt-mark manual $(cat /savedAptMark.txt) > /dev/null; 	\
+    apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false;     \
+    apt-get clean;     \
+    apt-get autoclean;     \
+    rm -rf /var/lib/apt/lists/*
 
-RUN cp /usr/share/zoneinfo/${TZ} /etc/localtime && echo "${TZ}" > /etc/timezone
-
-CMD ["./CLIProxyAPI"]
+RUN set -eux;     \
+    touch ${HOME_DIR}/cpa.sh;    \
+    chmod +x ${HOME_DIR}/cpa.sh;     \
+    cat <<EOF > ${HOME_DIR}/cpa.sh
+#!/bin/bash
+cd "${CLIPROXY_INSTALLDIR}"
+echo "---------------------------------------------------"
+echo "To open CLIProxyAPI, please visit:"
+echo "http://localhost:8317/management.html or"
+echo ""
+echo "---------------------------------------------------"
+./cli-proxy-api
+EOF
+CMD ["./cpa.sh"]

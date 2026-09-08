@@ -71,7 +71,7 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          file: ./Dockerfile-ghcr
+          file: ./Dockerfile
           build-args: |
             APP_VERSION=${{ steps.git_meta.outputs.VERSION }}
             APP_COMMIT=${{ steps.git_meta.outputs.COMMIT }}
