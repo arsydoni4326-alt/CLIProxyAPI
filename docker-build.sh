@@ -21,7 +21,8 @@ echo "3) Run (For Developers)"
 read -r -p "Enter choice [1-2]: " choice
 
 # --- Step 2: Execute based on choice ---
-IMAGE_NAME="cli-proxy-api:local"
+CPA_COMMIT="$(git rev-parse --short HEAD)"
+IMAGE_NAME="cli-proxy-api:${CPA_COMMIT}"
 case "$choice" in
   1)
     echo "--- Running with Pre-built Image ---"
@@ -51,6 +52,7 @@ case "$choice" in
     echo "Building the Docker image..."
     docker build \
       -t ${IMAGE_NAME} \
+      --no-cache
       --build-arg CPAM_VERSION="${CPAM_VERSION}" \
       --build-arg CPAM_COMMIT="${CPAM_COMMIT}" \
       --build-arg CPA_VERSION="${CPA_VERSION}" \
