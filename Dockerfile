@@ -1,22 +1,23 @@
-FROM alpine/git AS git
-WORKDIR /app
-RUN git clone -b main https://github.com/arsydoni4326-alt/Cli-Proxy-API-Management-Center.git
-
 # Build management.html
 FROM oven/bun:1.3.14 AS react-builder
 WORKDIR /app
-COPY --from=git /app/Cli-Proxy-API-Management-Center/package.json /app/Cli-Proxy-API-Management-Center/bun.lock ./
+ARG CPAM_VERSION=v0.0.0
+ARG CPAM_COMMIT=unknown
+COPY frontend/package.json frontend/bun.lock ./
 RUN bun install --frozen-lockfile
-COPY --from=git /app/Cli-Proxy-API-Management-Center/. .
-RUN bun run build && \ 
+COPY frontend/. .
+RUN VERSION="${CPAM_VERSION}" bun run build && \ 
  cp dist/index.html /app/management.html
 
 # Build CPA
 FROM --platform=$BUILDPLATFORM golang:trixie AS go-builder
+ENV TZ="Asia/Jakarta"
+RUN [ ! -f /etc/localtime ] && ln -s /usr/share/zoneinfo/$TZ /etc/localtime; 	\
+    echo $TZ > /etc/timezone
 WORKDIR /app
 # Define the build arguments passed from GitHub Actions
-ARG APP_VERSION=v0.0.0
-ARG APP_COMMIT=unknown
+ARG CPA_VERSION=v0.0.0
+ARG CPA_COMMIT=unknown
 RUN set -eux;     \
     apt update -y; \
     apt install -y --no-install-recommends       \
@@ -40,7 +41,7 @@ RUN set -eux;   \
         GOOS=linux \
         go build \
             -buildvcs=false \
-            -ldflags="-s -w -X 'main.Version=${APP_VERSION}' -X 'main.Commit=${APP_COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" \
+            -ldflags="-s -w -X 'main.Version=${CPA_VERSION}' -X 'main.Commit=${CPA_COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" \
             -o ./CLIProxyAPI ./cmd/server/ ;  \
     chmod +x ./CLIProxyAPI
 
