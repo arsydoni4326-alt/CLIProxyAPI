@@ -2,7 +2,6 @@ package management
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -19,7 +18,8 @@ import (
 )
 
 const (
-	latestReleaseURL       = "https://api.github.com/repos/router-for-me/CLIProxyAPI/releases/latest"
+	latestReleaseURL       = "https://api.github.com/repos/arsydoni4326-alt/CLIProxyAPI/releases/latest"
+	latestCommitURL        = "https://api.github.com/repos/arsydoni4326-alt/CLIProxyAPI/commits/main"
 	latestReleaseUserAgent = "CLIProxyAPI"
 )
 
@@ -44,7 +44,11 @@ func setLatestReleaseRequestHeaders(req *http.Request) {
 	}
 }
 
-// GetLatestVersion returns the latest release version from GitHub without downloading assets.
+type commitInfo struct {
+	SHA string `json:"sha"`
+}
+
+// GetLatestVersion returns the latest release version and commit from GitHub.
 func (h *Handler) GetLatestVersion(c *gin.Context) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	proxyURL := ""
@@ -56,6 +60,8 @@ func (h *Handler) GetLatestVersion(c *gin.Context) {
 		util.SetProxy(sdkCfg, client)
 	}
 
+	// Fetch latest version
+	version := ""
 	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, latestReleaseURL, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "request_create_failed", "message": err.Error()})
@@ -74,28 +80,41 @@ func (h *Handler) GetLatestVersion(c *gin.Context) {
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		c.JSON(http.StatusBadGateway, gin.H{"error": "unexpected_status", "message": fmt.Sprintf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))})
-		return
+	if resp.StatusCode == http.StatusOK {
+		var info releaseInfo
+		if errDecode := json.NewDecoder(resp.Body).Decode(&info); errDecode == nil {
+			version = strings.TrimSpace(info.TagName)
+			if version == "" {
+				version = strings.TrimSpace(info.Name)
+			}
+		}
 	}
 
-	var info releaseInfo
-	if errDecode := json.NewDecoder(resp.Body).Decode(&info); errDecode != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "decode_failed", "message": errDecode.Error()})
-		return
+	// Fetch latest commit from main branch
+	commit := ""
+	req2, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, latestCommitURL, nil)
+	if err == nil {
+		setLatestReleaseRequestHeaders(req2)
+		resp2, err2 := client.Do(req2)
+		if err2 == nil {
+			defer func() {
+				if errClose := resp2.Body.Close(); errClose != nil {
+					log.WithError(errClose).Debug("failed to close latest commit response body")
+				}
+			}()
+			if resp2.StatusCode == http.StatusOK {
+				var info commitInfo
+				if errDecode := json.NewDecoder(resp2.Body).Decode(&info); errDecode == nil {
+					commit = strings.TrimSpace(info.SHA)
+				}
+			}
+		}
 	}
 
-	version := strings.TrimSpace(info.TagName)
-	if version == "" {
-		version = strings.TrimSpace(info.Name)
-	}
-	if version == "" {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "invalid_response", "message": "missing release version"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"latest-version": version})
+	c.JSON(http.StatusOK, gin.H{
+		"latest-version": version,
+		"latest-commit":  commit,
+	})
 }
 
 func WriteConfig(path string, data []byte) error {
