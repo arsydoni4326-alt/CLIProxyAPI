@@ -61,12 +61,11 @@ case "$choice" in
     echo "Build complete. Services are starting."
     echo "Run 'docker compose logs -f' to see the logs."
     ;;
-  3) docker run --rm -d \
+  3) docker run --rm \
     --name cpatest \
     -v $(pwd)/config.yaml:/root/.cliproxyapi/bin/config.yaml \
     --network host \
     $IMAGE_NAME
-    docker logs -f cpatest
     ;;
   *)
     echo "Invalid choice. Please enter 1 or 2."
