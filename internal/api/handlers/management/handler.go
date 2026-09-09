@@ -93,6 +93,21 @@ func NewHandler(cfg *config.Config, configFilePath string, manager *coreauth.Man
 	return h
 }
 
+// SetStartedAt records the server start time for status reporting.
+func (h *Handler) SetStartedAt(t time.Time) {
+	h.statusMu.Lock()
+	defer h.statusMu.Unlock()
+	h.startedAt = t
+}
+
+// SetWatcherState installs a callback that reports whether the config watcher is running.
+// The callback is called when the /v0/management/status endpoint is served.
+func (h *Handler) SetWatcherState(fn func() bool) {
+	h.statusMu.Lock()
+	defer h.statusMu.Unlock()
+	h.watcherState = fn
+}
+
 // startAttemptCleanup launches a background goroutine that periodically
 // removes stale IP entries from failedAttempts to prevent memory leaks.
 func (h *Handler) startAttemptCleanup() {
