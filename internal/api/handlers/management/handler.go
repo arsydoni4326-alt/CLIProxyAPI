@@ -65,20 +65,9 @@ type Handler struct {
 	statusMu     sync.Mutex
 	startedAt    time.Time
 	watcherState func() bool
-}
 
-// SetStartedAt records the server boot time for status reporting.
-func (h *Handler) SetStartedAt(t time.Time) {
-	h.statusMu.Lock()
-	defer h.statusMu.Unlock()
-	h.startedAt = t
-}
-
-// SetWatcherState installs a callback that reports whether the config watcher is running.
-func (h *Handler) SetWatcherState(fn func() bool) {
-	h.statusMu.Lock()
-	defer h.statusMu.Unlock()
-	h.watcherState = fn
+	pluginStoreRateLimiter  *pluginstore.GitHubRateLimiter
+	pluginReleases          pluginReleaseCache
 }
 
 type configReloadSnapshot struct {
