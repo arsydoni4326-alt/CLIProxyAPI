@@ -21,7 +21,8 @@ echo "3) Run (For Developers)"
 read -r -p "Enter choice [1-2]: " choice
 
 # --- Step 2: Execute based on choice ---
-IMAGE_NAME="cli-proxy-api:local"
+CPA_COMMIT="$(git rev-parse --short HEAD)"
+IMAGE_NAME="cli-proxy-api:${CPA_COMMIT}"
 case "$choice" in
   1)
     echo "--- Running with Pre-built Image ---"
@@ -51,6 +52,7 @@ case "$choice" in
     echo "Building the Docker image..."
     docker build \
       -t ${IMAGE_NAME} \
+      --no-cache \
       --build-arg CPAM_VERSION="${CPAM_VERSION}" \
       --build-arg CPAM_COMMIT="${CPAM_COMMIT}" \
       --build-arg CPA_VERSION="${CPA_VERSION}" \
@@ -61,12 +63,11 @@ case "$choice" in
     echo "Build complete. Services are starting."
     echo "Run 'docker compose logs -f' to see the logs."
     ;;
-  3) docker run --rm -d \
+  3) docker run --rm \
     --name cpatest \
     -v $(pwd)/config.yaml:/root/.cliproxyapi/bin/config.yaml \
     --network host \
     $IMAGE_NAME
-    docker logs -f cpatest
     ;;
   *)
     echo "Invalid choice. Please enter 1 or 2."

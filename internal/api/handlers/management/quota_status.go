@@ -12,18 +12,18 @@ import (
 
 // quotaStatusEntry represents the quota state for a specific auth and optional model.
 type quotaStatusEntry struct {
-	AuthID               string            `json:"auth_id"`
-	Provider             string            `json:"provider"`
-	Label                string            `json:"label,omitempty"`
-	Model                string            `json:"model,omitempty"`
-	Exceeded             bool              `json:"exceeded"`
-	Reason               string            `json:"reason,omitempty"`
-	NextRecoverAt        string            `json:"next_recover_at,omitempty"`
-	BackoffLevel         int               `json:"backoff_level,omitempty"`
-	EffectiveDelaySeconds float64          `json:"effective_delay_seconds,omitempty"`
-	JitterFraction       float64           `json:"jitter_fraction,omitempty"`
-	ObservedAt           string            `json:"observed_at,omitempty"`
-	Signals              map[string]string `json:"signals,omitempty"`
+	AuthID                string            `json:"auth_id"`
+	Provider              string            `json:"provider"`
+	Label                 string            `json:"label,omitempty"`
+	Model                 string            `json:"model,omitempty"`
+	Exceeded              bool              `json:"exceeded"`
+	Reason                string            `json:"reason,omitempty"`
+	NextRecoverAt         string            `json:"next_recover_at,omitempty"`
+	BackoffLevel          int               `json:"backoff_level,omitempty"`
+	EffectiveDelaySeconds float64           `json:"effective_delay_seconds,omitempty"`
+	JitterFraction        float64           `json:"jitter_fraction,omitempty"`
+	ObservedAt            string            `json:"observed_at,omitempty"`
+	Signals               map[string]string `json:"signals,omitempty"`
 }
 
 // GetQuotaStatus returns the current quota signal state for all credentials and models.
@@ -89,17 +89,17 @@ func authQuotaEntry(auth *coreauth.Auth) quotaStatusEntry {
 	quota := auth.Quota
 	cfg := coreauth.GetBackoffConfig()
 	return quotaStatusEntry{
-		AuthID:               auth.ID,
-		Provider:             auth.Provider,
-		Label:                auth.Label,
-		Exceeded:             quota.Exceeded,
-		Reason:               quota.Reason,
-		NextRecoverAt:        formatTimePtr(quota.NextRecoverAt),
-		BackoffLevel:         quota.BackoffLevel,
+		AuthID:                auth.ID,
+		Provider:              auth.Provider,
+		Label:                 auth.Label,
+		Exceeded:              quota.Exceeded,
+		Reason:                quota.Reason,
+		NextRecoverAt:         formatTimePtr(quota.NextRecoverAt),
+		BackoffLevel:          quota.BackoffLevel,
 		EffectiveDelaySeconds: effectiveDelaySeconds(quota.BackoffLevel, cfg),
-		JitterFraction:       cfg.Jitter(),
-		ObservedAt:           formatTimePtr(quota.ObservedAt),
-		Signals:              quota.Signals,
+		JitterFraction:        cfg.Jitter(),
+		ObservedAt:            formatTimePtr(quota.ObservedAt),
+		Signals:               quota.Signals,
 	}
 }
 
@@ -107,18 +107,18 @@ func authQuotaEntry(auth *coreauth.Auth) quotaStatusEntry {
 func modelQuotaEntry(auth *coreauth.Auth, modelName string, quota coreauth.QuotaState) quotaStatusEntry {
 	cfg := coreauth.GetBackoffConfig()
 	return quotaStatusEntry{
-		AuthID:               auth.ID,
-		Provider:             auth.Provider,
-		Label:                auth.Label,
-		Model:                modelName,
-		Exceeded:             quota.Exceeded,
-		Reason:               quota.Reason,
-		NextRecoverAt:        formatTimePtr(quota.NextRecoverAt),
-		BackoffLevel:         quota.BackoffLevel,
+		AuthID:                auth.ID,
+		Provider:              auth.Provider,
+		Label:                 auth.Label,
+		Model:                 modelName,
+		Exceeded:              quota.Exceeded,
+		Reason:                quota.Reason,
+		NextRecoverAt:         formatTimePtr(quota.NextRecoverAt),
+		BackoffLevel:          quota.BackoffLevel,
 		EffectiveDelaySeconds: effectiveDelaySeconds(quota.BackoffLevel, cfg),
-		JitterFraction:       cfg.Jitter(),
-		ObservedAt:           formatTimePtr(quota.ObservedAt),
-		Signals:              quota.Signals,
+		JitterFraction:        cfg.Jitter(),
+		ObservedAt:            formatTimePtr(quota.ObservedAt),
+		Signals:               quota.Signals,
 	}
 }
 
