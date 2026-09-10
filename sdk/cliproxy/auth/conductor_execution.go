@@ -1782,11 +1782,40 @@ func debugLogAuthSelection(entry *log.Entry, auth *Auth, provider string, model 
 	}
 	switch accountType {
 	case "api_key":
-		entry.Debugf("Use API key %s for model %s%s", util.HideAPIKey(accountInfo), model, suffix)
+		if providerName := providerDisplayName(auth, provider); providerName != "" {
+			entry.Debugf("Use API key %s for model %s (provider=%s)%s", util.HideAPIKey(accountInfo), model, providerName, suffix)
+		} else {
+			entry.Debugf("Use API key %s for model %s%s", util.HideAPIKey(accountInfo), model, suffix)
+		}
 	case "oauth":
 		ident := formatOauthIdentity(auth, provider, accountInfo)
 		entry.Debugf("Use OAuth %s for model %s%s", ident, model, suffix)
 	}
+}
+
+// providerDisplayName resolves the best available provider name for logging.
+// For OpenAI-compatible credentials the generic provider key is
+// "openai-compatibility"; prefer the specific compat name or label so the log
+// identifies the actual upstream provider.
+func providerDisplayName(auth *Auth, provider string) string {
+	if auth == nil {
+		return strings.TrimSpace(provider)
+	}
+	if auth.Attributes != nil {
+		if compatName := strings.TrimSpace(auth.Attributes["compat_name"]); compatName != "" {
+			return compatName
+		}
+	}
+	providerKey := strings.TrimSpace(auth.Provider)
+	if providerKey == "" {
+		providerKey = strings.TrimSpace(provider)
+	}
+	if strings.EqualFold(providerKey, "openai-compatibility") {
+		if label := strings.TrimSpace(auth.Label); label != "" {
+			return label
+		}
+	}
+	return providerKey
 }
 
 func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string {
@@ -1794,10 +1823,7 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
 		return ""
 	}
 	// Prefer the auth's provider when available.
-	providerName := strings.TrimSpace(auth.Provider)
-	if providerName == "" {
-		providerName = strings.TrimSpace(provider)
-	}
+	providerName := providerDisplayName(auth, provider)
 	// Only log the basename to avoid leaking host paths.
 	// FileName may be unset for some auth backends; fall back to ID.
 	authFile := strings.TrimSpace(auth.FileName)
@@ -1810,6 +1836,9 @@ func formatOauthIdentity(auth *Auth, provider string, accountInfo string) string
 	parts := make([]string, 0, 3)
 	if providerName != "" {
 		parts = append(parts, "provider="+providerName)
+	}
+	if accountName := strings.TrimSpace(accountInfo); accountName != "" {
+		parts = append(parts, "account="+accountName)
 	}
 	if authFile != "" {
 		parts = append(parts, "auth_file="+authFile)
