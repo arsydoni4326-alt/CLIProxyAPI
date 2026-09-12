@@ -84,6 +84,18 @@ type AuthUpdate struct {
 	revision uint64 // Watcher-local ordering, independent of runtime auth generations.
 }
 
+// Revision returns the monotonic watcher revision assigned to this update.
+func (u AuthUpdate) Revision() uint64 {
+	return u.revision
+}
+
+// SetRevision updates the revision counter for this update.
+func (u *AuthUpdate) SetRevision(rev uint64) {
+	if u != nil {
+		u.revision = rev
+	}
+}
+
 const (
 	// replaceCheckDelay is a short delay to allow atomic replace (rename) to settle
 	// before deciding whether a Remove event indicates a real deletion.
@@ -140,6 +152,11 @@ func (w *Watcher) Stop() error {
 	return w.watcher.Close()
 }
 
+// Running returns true if the watcher has been started and not yet stopped.
+func (w *Watcher) Running() bool {
+	return !w.stopped.Load()
+}
+
 // SetConfig updates the current configuration
 func (w *Watcher) SetConfig(cfg *config.Config) {
 	w.clientsMutex.Lock()
@@ -173,9 +190,10 @@ func (w *Watcher) DispatchPersistedAuthUpdate(update AuthUpdate) bool {
 	return w.dispatchPersistedAuthUpdate(update)
 }
 
-// Running returns true if the watcher has been started and not yet stopped.
-func (w *Watcher) Running() bool {
-	return !w.stopped.Load()
+// DispatchPersistedAuthUpdateWithRevision pushes already-persisted file auth updates through the watcher queue
+// and returns the stamped monotonic revision.
+func (w *Watcher) DispatchPersistedAuthUpdateWithRevision(update *AuthUpdate) (bool, uint64) {
+	return w.dispatchPersistedAuthUpdateWithRevision(update)
 }
 
 // SnapshotCoreAuths converts current clients snapshot into core auth entries.
