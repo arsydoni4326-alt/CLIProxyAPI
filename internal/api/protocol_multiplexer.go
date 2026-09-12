@@ -12,6 +12,25 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// acceptedKeepAliveConfig keeps NAT/overlay middleboxes from silently dropping
+// idle long-lived connections (redis usage subscriptions, streaming responses).
+var acceptedKeepAliveConfig = net.KeepAliveConfig{
+	Enable:   true,
+	Idle:     30 * time.Second,
+	Interval: 15 * time.Second,
+	Count:    6,
+}
+
+// enableAcceptedKeepAlive turns on TCP keep-alive probes for an accepted
+// connection; failures are non-fatal and only logged.
+func enableAcceptedKeepAlive(conn net.Conn) {
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		if err := tcp.SetKeepAliveConfig(acceptedKeepAliveConfig); err != nil {
+			log.Debugf("failed to enable TCP keep-alive: %v", err)
+		}
+	}
+}
+
 func normalizeHTTPServeError(err error) error {
 	if err == nil {
 		return nil
@@ -60,6 +79,8 @@ func (s *Server) acceptMuxConnections(listener net.Listener, httpListener *muxLi
 
 // routeMuxConnection performs per-connection protocol detection and routing.
 func (s *Server) routeMuxConnection(conn net.Conn, httpListener *muxListener) {
+	enableAcceptedKeepAlive(conn)
+
 	// Set a read deadline so that idle connections that never send bytes do not
 	// leak goroutines and file descriptors. The deadline is cleared once the
 	// connection is successfully routed to its handler.

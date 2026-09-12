@@ -66,6 +66,11 @@ func (s *Server) handleRedisConnection(conn net.Conn, reader *bufio.Reader) {
 
 	for {
 		if !s.managementRoutesEnabled.Load() {
+			// Reply with a proper Redis error before closing so clients (e.g.
+			// cpa-usage-keeper) get a meaningful message instead of a TCP RST
+			// ("connection reset by peer") on their pending AUTH/SUBSCRIBE read.
+			_ = writeRedisError(writer, "ERR remote management disabled")
+			_ = writer.Flush()
 			return
 		}
 

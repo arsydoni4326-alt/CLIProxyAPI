@@ -244,13 +244,21 @@ func TestRedisProtocol_ManagementDisabled_RejectsConnection(t *testing.T) {
 		t.Fatalf("failed to write RESP command: %v", errWrite)
 	}
 
+	// The server must reply with a proper RESP error before closing so clients
+	// see a meaningful message instead of a TCP RST ("connection reset by peer").
+	if msg, err := readTestRESPError(bufio.NewReader(conn)); err != nil {
+		t.Fatalf("failed to read management-disabled RESP error: %v", err)
+	} else if msg != "ERR remote management disabled" {
+		t.Fatalf("unexpected management-disabled RESP error: %q", msg)
+	}
+
 	buf := make([]byte, 1)
 	_, errRead := conn.Read(buf)
 	if errRead == nil {
-		t.Fatalf("expected connection to be closed when management is disabled")
+		t.Fatalf("expected connection to be closed after management-disabled RESP error")
 	}
 	if ne, ok := errRead.(net.Error); ok && ne.Timeout() {
-		t.Fatalf("expected connection to be closed when management is disabled, got timeout: %v", errRead)
+		t.Fatalf("expected connection to be closed after management-disabled RESP error, got timeout: %v", errRead)
 	}
 }
 
