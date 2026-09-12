@@ -1,3 +1,4 @@
 [submodule "frontend"]
 	path = frontend
+	branch = main
 	url = https://github.com/arsydoni4326-alt/Cli-Proxy-API-Management-Center.git
