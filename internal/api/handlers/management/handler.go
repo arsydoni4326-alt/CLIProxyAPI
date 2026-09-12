@@ -41,6 +41,7 @@ type Handler struct {
 	cfg                     *config.Config
 	configFilePath          string
 	mu                      sync.Mutex
+	authStatusMu            sync.Mutex
 	reloadMu                sync.Mutex
 	reloadGeneration        uint64
 	appliedReloadGeneration uint64
@@ -66,8 +67,8 @@ type Handler struct {
 	startedAt    time.Time
 	watcherState func() bool
 
-	pluginStoreRateLimiter  *pluginstore.GitHubRateLimiter
-	pluginReleases          pluginReleaseCache
+	pluginStoreRateLimiter *pluginstore.GitHubRateLimiter
+	pluginReleases         pluginReleaseCache
 }
 
 type configReloadSnapshot struct {
