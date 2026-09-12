@@ -50,7 +50,10 @@ type commitInfo struct {
 
 // GetLatestVersion returns the latest release version and commit from GitHub.
 func (h *Handler) GetLatestVersion(c *gin.Context) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Version checks hit api.github.com from potentially slow networks; a short
+	// timeout caused frequent "context deadline exceeded" errors on the
+	// management page. 30s keeps the check reliable without blocking forever.
+	client := &http.Client{Timeout: 30 * time.Second}
 	proxyURL := ""
 	if h != nil && h.cfg != nil {
 		proxyURL = strings.TrimSpace(h.cfg.ProxyURL)
