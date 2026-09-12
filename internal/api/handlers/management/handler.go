@@ -67,8 +67,8 @@ type Handler struct {
 	startedAt    time.Time
 	watcherState func() bool
 
-	pluginStoreRateLimiter  *pluginstore.GitHubRateLimiter
-	pluginReleases          pluginReleaseCache
+	pluginStoreRateLimiter *pluginstore.GitHubRateLimiter
+	pluginReleases         pluginReleaseCache
 }
 
 type configReloadSnapshot struct {

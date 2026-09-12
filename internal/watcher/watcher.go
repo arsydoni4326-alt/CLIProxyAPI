@@ -152,6 +152,11 @@ func (w *Watcher) Stop() error {
 	return w.watcher.Close()
 }
 
+// Running returns true if the watcher has been started and not yet stopped.
+func (w *Watcher) Running() bool {
+	return !w.stopped.Load()
+}
+
 // SetConfig updates the current configuration
 func (w *Watcher) SetConfig(cfg *config.Config) {
 	w.clientsMutex.Lock()

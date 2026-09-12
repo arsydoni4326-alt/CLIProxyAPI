@@ -875,7 +875,7 @@ func (m *MerklePrefixMatcher) LookupSession(sessionID string) (authIDs []string,
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	now := m.now()
+	now := time.Now()
 
 	var expired []*lcpGroup
 	var active []*lcpGroup

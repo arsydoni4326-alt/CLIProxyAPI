@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Build failure in MerklePrefixMatcher**: Fixed compilation error in LCP session lookup where `m.now()` method was undefined; replaced with direct `time.Now()` call.
+- **Build failure in WatcherWrapper**: Added missing `running` field to `WatcherWrapper` struct and implemented `Running()` method in internal watcher to expose running state.
 - **Codex quota behavior**: Terminal quota errors now properly cool down the affected account and fail over to alternative credentials. Model-level cooling ensures sibling models are not affected by quota limits on a single model.
 - **Auth refresh and persistence**: Improved handling of auth state updates, metadata merging, and refresh scheduling.
 

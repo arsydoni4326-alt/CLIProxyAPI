@@ -109,6 +109,7 @@ type WatcherWrapper struct {
 	dispatchPersistedAuthWithRev func(update *watcher.AuthUpdate) (bool, uint64)
 	setPluginAuthParser          func(parser PluginAuthParser)
 	reloadConfigIfChanged        func()
+	running                      func() bool
 }
 
 // Start proxies to the underlying watcher Start implementation.
