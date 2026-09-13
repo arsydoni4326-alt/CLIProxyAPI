@@ -98,7 +98,7 @@ PackyCode provides special discounts for our software users: register using <a h
 </tr>
 <tr>
 <td width="180"><a href="https://www.axisnow.io/zh"><img src="./assets/axisnow.png" alt="AxisNow" width="150"></a></td>
-<td>Protect and accelerate websites and APIs while optimizing access from both mainland China and the rest of the world. Extend acceleration and security to native and mobile apps through client SDKs – <b>self-hosted private CDN | subscription-based DDoS-protected CDN | independently controlled, flexibly composable CDN networks.</b></td>
+<td>Protect and accelerate websites and APIs while optimizing access from both mainland China and the rest of the world. Extend acceleration and security to native and mobile apps through client SDKs ï¿½ <b>self-hosted private CDN | subscription-based DDoS-protected CDN | independently controlled, flexibly composable CDN networks.</b></td>
 </tr>
 <tr>
 <td width="180"><a href="https://www.swiftproxy.net/?code=PR67S9A95"><img src="./assets/swiftproxy.png" alt="Swiftproxy" width="150"></a></td>
@@ -106,7 +106,7 @@ PackyCode provides special discounts for our software users: register using <a h
 </tr>
 <tr>
 <td width="180"><a href="https://aiberm.com?ref=cpa"><img src="./assets/aiberm.png" alt="Aiberm" width="150"></a></td>
-<td>This project is sponsored by Aiberm – a unified, discounted AI API for developers. One endpoint for Claude, GPT, Grok, DeepSeek, GLM, Kimi, and MiniMax: 85201390% off Claude, 90% off GPT, and 80% off Grok. Image generation included, with GPT Image 2 and Nano Banana. <a href="https://aiberm.com?ref=cpa">Visit Aiberm</a>.</td>
+<td>This project is sponsored by Aiberm ï¿½ a unified, discounted AI API for developers. One endpoint for Claude, GPT, Grok, DeepSeek, GLM, Kimi, and MiniMax: 85201390% off Claude, 90% off GPT, and 80% off Grok. Image generation included, with GPT Image 2 and Nano Banana. <a href="https://aiberm.com?ref=cpa">Visit Aiberm</a>.</td>
 </tr>
 <tr>
 <td width="180"><a href="https://www.rapidproxy.io/?code=KHM9B6E6M"><img src="./assets/rapidproxy.png" alt="RapidProxy" width="150"></a></td>
@@ -145,6 +145,13 @@ see [MANAGEMENT_API.md](https://help.router-for.me/management/api)
 ### Provider Key Tests and Per-Credential Proxies
 
 Provider-key tests made through the management API honor the selected credential's `proxy-url`, including `direct` and `none`, before falling back to the global `proxy-url`. When a test request does not provide an `auth_index`, the API can resolve a credential from its `Authorization: Bearer`, `X-Api-Key`, or `X-Goog-Api-Key` header only if that API key and target base URL identify exactly one configured credential. This prevents a shared API key from applying another provider's proxy configuration.
+
+### OAuth Login and the "Do Not Use Proxy" Toggle (fork feature)
+
+The management UI OAuth page (`/management.html#/oauth`) provides a **"Do Not Use Proxy"** checkbox, **checked by default**. When checked, every OAuth/device-code login (Codex, Anthropic/Claude, Antigravity, Kimi, xAI/Grok) connects directly, bypassing both the configured `proxy-url` and environment proxies. Unchecking it restores the configured proxy behavior for the login flow.
+
+- The choice is sent per login request as `no_proxy=true` on the `{provider}-auth-url` management endpoints (`internal/api/handlers/management/auth_files_provider_oauth.go`, helper `oauthProxyOverride`). Toggling the checkbox takes effect on the next login **without restarting the service**.
+- This is a fork-specific feature (upstream `router-for-me/CLIProxyAPI` does not have it). It is protected against upstream merges by item 8 of [`docs/MERGE-PRESERVATION-fork-fixes.md`](docs/MERGE-PRESERVATION-fork-fixes.md), which documents the required code, files, and post-merge verification steps.
 
 ## Usage Statistics
 

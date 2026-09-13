@@ -7,13 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v7.2.160-arsydoni4326-alt]
 
+### Added
+
+- **OAuth "Do Not Use Proxy" toggle (fork feature)**: The management UI OAuth page gains a **"Do Not Use Proxy"** checkbox, **checked by default**. When checked, OAuth/device-code logins (Codex, Anthropic/Claude, Antigravity, Kimi, xAI/Grok) connect directly, bypassing both the configured `proxy-url` and environment proxies; unchecking restores the configured proxy for the login. The UI sends `no_proxy=true` per request on the `{provider}-auth-url` endpoints, and the Go handlers (`internal/api/handlers/management/auth_files_provider_oauth.go`) build each provider's auth service with the `"direct"` proxy override, so toggling takes effect on the next login **without restarting the service**. Frontend changes live in the `frontend` submodule (`src/pages/OAuthPage.tsx`, `src/services/api/oauth.ts`, `src/pages/OAuthPage.module.scss`, locale files) and the served `static/management.html` was rebuilt. This feature is protected across upstream merges by item 8 of `docs/MERGE-PRESERVATION-fork-fixes.md`.
+
 ### Fixed
 
-- **Fork fixes missing from compose deployments**: `docker-compose.yml` and `docker-compose.cluster.yml` set `pull_policy: always` but defaulted to the upstream image `eceasy/cli-proxy-api:latest`, so `docker compose up -d` on this fork ran a CPA build without any of the fork-specific fixes. `cpa-usage-keeper` consequently kept reporting `read redis subscribe auth response: ... connection reset by peer` (plus the matching Redis-pull and `/v0/management/usage-queue` HTTP variants) even though `internal/api/redis_queue_protocol.go` already replied with a graceful RESP error. The default is now `${CLI_PROXY_IMAGE:-ghcr.io/arsydoni4326-alt/cliproxyapi:latest}`, which is built from this repository's `Dockerfile`; set `CLI_PROXY_IMAGE=eceasy/cli-proxy-api:latest` to run upstream, or run `docker compose up -d --build` to build locally. Recreate (do not just restart) the container after changing the image.
+- **Compose deployments ran the upstream image**: `docker-compose.yml` and `docker-compose.cluster.yml` set `pull_policy: always` but defaulted to the upstream image `eceasy/cli-proxy-api:latest`, so `docker compose up -d` on this fork ran a CPA build without any of the fork-specific fixes (`docs/MERGE-PRESERVATION-fork-fixes.md` items 1–6). The default is now `${CLI_PROXY_IMAGE:-ghcr.io/arsydoni4326-alt/cliproxyapi:latest}`, which is built from this repository's `Dockerfile`; set `CLI_PROXY_IMAGE=eceasy/cli-proxy-api:latest` to run upstream, or run `docker compose up -d --build` to build locally. Recreate (do not just restart) the container after changing the image. This is a deployment defect, separate from the intermittent bidirectional resets diagnosed on 2026-09-13 (see §7 of the fork-fixes document).
 
 ### Changed
 
-- **Documentation**: `docs/MERGE-PRESERVATION-fork-fixes.md` gained item 7 plus §3.7 (compose image contract), a compose check in the §4 merge checklist, and §7 "Troubleshooting: cpa-usage-keeper reports `connection reset by peer`" with the image/version check, a direct RESP `PING` probe and the expected replies.
+- **Documentation**: `docs/MERGE-PRESERVATION-fork-fixes.md` gained item 7 plus §3.7 (compose image contract), a compose check in the §4 merge checklist, and §7 with §7.1 "Reading the CPA-side log" — the image/version check, a direct RESP `PING` probe with expected replies, and the tcpdump/firewall/conntrack checks used to localize resets that both ends observe.
 
 ## [v7.2.159-arsydoni4326-alt]
 

@@ -33,6 +33,23 @@ type codexOAuthService interface {
 	CreateTokenStorage(bundle *codex.CodexAuthBundle) *codex.CodexTokenStorage
 }
 
+// oauthProxyOverride returns an explicit proxy override for OAuth login requests.
+// When the management UI sends no_proxy=true ("Do Not Use Proxy" checked), the
+// override value "direct" makes the OAuth flow bypass both the configured proxy
+// and environment proxies. An empty result keeps the configured proxy behavior.
+// The value is read per request, so toggling takes effect without a restart.
+func oauthProxyOverride(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Query("no_proxy"))) {
+	case "1", "true", "yes", "on":
+		return "direct"
+	default:
+		return ""
+	}
+}
+
 func (h *Handler) RequestAnthropicToken(c *gin.Context) {
 	ctx := context.Background()
 	ctx = PopulateAuthContext(ctx, c)
@@ -55,8 +72,8 @@ func (h *Handler) RequestAnthropicToken(c *gin.Context) {
 		return
 	}
 
-	// Initialize Claude auth service
-	anthropicAuth := claude.NewClaudeAuth(h.cfg)
+	// Initialize Claude auth service (with an optional direct-connection override)
+	anthropicAuth := claude.NewClaudeAuthWithProxyURL(h.cfg, oauthProxyOverride(c))
 
 	// Generate authorization URL (then override redirect_uri to reuse server port)
 	authURL, state, err := anthropicAuth.GenerateAuthURL(state, pkceCodes)
@@ -216,8 +233,8 @@ func (h *Handler) RequestCodexToken(c *gin.Context) {
 		return
 	}
 
-	// Initialize Codex auth service
-	openaiAuth := newCodexOAuthService(h.cfg)
+	// Initialize Codex auth service (with an optional direct-connection override)
+	openaiAuth := newCodexOAuthService(h.cfg, oauthProxyOverride(c))
 
 	// Generate authorization URL
 	authURL, err := openaiAuth.GenerateAuthURL(state, pkceCodes)
@@ -348,7 +365,13 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 
 	fmt.Println("Initializing Antigravity authentication...")
 
-	authSvc := antigravity.NewAntigravityAuth(h.cfg, nil)
+	// With a direct-connection override, pass an explicit HTTP client so the
+	// OAuth flow bypasses the configured proxy; otherwise use config settings.
+	var antigravityClient *http.Client
+	if oauthProxyOverride(c) != "" {
+		antigravityClient = &http.Client{}
+	}
+	authSvc := antigravity.NewAntigravityAuth(h.cfg, antigravityClient)
 
 	state, errState := misc.GenerateRandomState()
 	if errState != nil {
@@ -516,7 +539,7 @@ func (h *Handler) RequestXAIToken(c *gin.Context) {
 	fmt.Println("Initializing xAI authentication...")
 
 	state := fmt.Sprintf("xai-%d", time.Now().UnixNano())
-	authSvc := xaiauth.NewXAIAuth(h.cfg)
+	authSvc := xaiauth.NewXAIAuthWithProxyURL(h.cfg, oauthProxyOverride(c))
 
 	deviceFlow, errStartDeviceFlow := authSvc.StartDeviceFlow(ctx)
 	if errStartDeviceFlow != nil {
@@ -629,8 +652,8 @@ func (h *Handler) RequestKimiToken(c *gin.Context) {
 	fmt.Println("Initializing Kimi authentication...")
 
 	state := fmt.Sprintf("kmi-%d", time.Now().UnixNano())
-	// Initialize Kimi auth service
-	kimiAuth := kimi.NewKimiAuth(h.cfg)
+	// Initialize Kimi auth service (with an optional direct-connection override)
+	kimiAuth := kimi.NewKimiAuthWithProxyURL(h.cfg, oauthProxyOverride(c))
 
 	// Generate authorization URL
 	deviceFlow, errStartDeviceFlow := kimiAuth.StartDeviceFlow(ctx)
