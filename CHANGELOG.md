@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.2.160-arsydoni4326-alt]
+
+### Fixed
+
+- **Fork fixes missing from compose deployments**: `docker-compose.yml` and `docker-compose.cluster.yml` set `pull_policy: always` but defaulted to the upstream image `eceasy/cli-proxy-api:latest`, so `docker compose up -d` on this fork ran a CPA build without any of the fork-specific fixes. `cpa-usage-keeper` consequently kept reporting `read redis subscribe auth response: ... connection reset by peer` (plus the matching Redis-pull and `/v0/management/usage-queue` HTTP variants) even though `internal/api/redis_queue_protocol.go` already replied with a graceful RESP error. The default is now `${CLI_PROXY_IMAGE:-ghcr.io/arsydoni4326-alt/cliproxyapi:latest}`, which is built from this repository's `Dockerfile`; set `CLI_PROXY_IMAGE=eceasy/cli-proxy-api:latest` to run upstream, or run `docker compose up -d --build` to build locally. Recreate (do not just restart) the container after changing the image.
+
+### Changed
+
+- **Documentation**: `docs/MERGE-PRESERVATION-fork-fixes.md` gained item 7 plus §3.7 (compose image contract), a compose check in the §4 merge checklist, and §7 "Troubleshooting: cpa-usage-keeper reports `connection reset by peer`" with the image/version check, a direct RESP `PING` probe and the expected replies.
+
 ## [v7.2.159-arsydoni4326-alt]
 
 > **Fork-specific changes.** The entries below are local changes on top of
