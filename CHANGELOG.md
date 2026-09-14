@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.2.161-arsydoni4326-alt]
+
+### Fixed
+
+- **Frontend submodule upstream merge completed**: The in-progress merge of `upstream/main` into `frontend` (`feature/enhance-devin-quota-fetcher` branch) had 6 unresolved conflicts, all in fork-preservation-sensitive files (`docs/MERGE-PRESERVATION-fork-fixes.md` items 5 and 8). Resolution:
+  - `src/services/api/oauth.ts` and `src/pages/OAuthPage.tsx`: `startAuth` now accepts **both** the fork's `{ noProxy }` option and upstream's `AbortSignal` argument (in either position), so the **"Do Not Use Proxy" toggle (fork feature, default checked) keeps working** while Devin OAuth requests remain abortable per upstream's cancellation contract.
+  - `src/i18n/locales/{en,ru,zh-CN,zh-TW}.json`: kept **both** sides — the fork's `auth_login.do_not_use_proxy` / `do_not_use_proxy_hint` keys and upstream's `devin_oauth_*` / `devin_callback_*` keys.
+- **Pre-existing test failure re-confirmed as environmental (not a regression)**: `tests/updateNotification.test.ts` "renders the current and available upstream versions with repository links" fails under `bun test` because bun does not provide browser globals (`localStorage`, `window`) used by `secureStorage`; verified identical failure on the pre-merge commit `87fbf06`.
+
+### Added
+
+- **Upstream frontend features brought in by the merge**: Devin OAuth login flow (session cancel, callback submission, request cancellation), Devin quota fetcher with session-specific request pools, auth-file cooldown section UI, and accompanying tests (`tests/devin*.test.ts`, `tests/oauthRequestCancellation.test.ts`, `tests/authFileCooldowns.test.ts`).
+
+### Changed
+
+- **Static management asset**: `static/management.html` rebuilt from the merged frontend (bundle date 2026-09-14) via the documented /tmp build recipe (repo-local `frontend/node_modules` is root-owned; see `session.md`). Verified the bundle contains both `do_not_use_proxy` and `devin_oauth` strings.
+
+## [v7.2.160-arsydoni4326-alt]
 ## [v7.2.160-arsydoni4326-alt]
 
 ### Added
