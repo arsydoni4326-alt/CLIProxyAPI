@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.2.162-arsydoni4326-alt]
+
+### Fixed
+
+- **Backend upstream merge conflict resolved (`upstream/main` → `bugfix/upstream-use-loopback-callback`)**: The in-progress merge of `upstream/main` (Devin follow-ups, loopback OAuth callback, plugin quota providers, Codex native fidelity) had 1 unresolved conflict in `sdk/api/handlers/openai/openai_responses_websocket.go`. Resolution kept **both** sides:
+  - **Imports**: the fork's `internal/logging` (used by the live-flow observer mirroring) and upstream's `internal/util` (used by `IsCodexResponsesLiteRequest` for Codex native-fidelity detection) are both present. The merged file body already contained both features, so no feature was dropped or altered.
+- **Project documentation gaps**: created the missing required root documents `CONTRIBUTING.md`, `ROADMAP.md`, `SPECIFICATION.md`, and `ARCHITECTURE.md` (none existed in git history). Content reflects the current architecture and workflow from `AGENTS.md` and `docs/`.
+
+### Verified
+
+- `go build -o test-output ./cmd/server` succeeds; `gofmt` clean on touched files; `go vet` clean on `sdk/api/handlers/openai/`.
+- `go test ./sdk/api/handlers/... -count=1` passes (includes the websocket and forward-handler tests covering both the flow-observer mirroring and the native-fidelity path).
+
 ## [v7.2.161-arsydoni4326-alt]
 
 ### Fixed
