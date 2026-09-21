@@ -856,6 +856,486 @@ func TestSessionAffinityClaudeMetadataSubagentNonInheritingGeminiModel(t *testin
 	}
 }
 
+func TestSessionAffinitySelectorLCPForkDerivesDistinctSessionIDAndParentLineage(t *testing.T) {
+	t.Parallel()
+
+	selector := NewSessionAffinitySelectorWithConfig(SessionAffinityConfig{
+		Fallback: &RoundRobinSelector{},
+		TTL:      time.Hour,
+	})
+	defer selector.Stop()
+
+	auths := []*Auth{{ID: "auth-1"}, {ID: "auth-2"}}
+
+	// 1. Root conversation: 3 user turns + 2 assistant answers
+	rootOpts := cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatOpenAI,
+		OriginalRequest: []byte(`{"messages":[` +
+			`{"role":"user","content":"turn 1"},` +
+			`{"role":"assistant","content":"ans 1"},` +
+			`{"role":"user","content":"turn 2 trunk"},` +
+			`{"role":"assistant","content":"ans 2 trunk"},` +
+			`{"role":"user","content":"turn 3 trunk"}` +
+			`]}`),
+		Metadata: map[string]any{
+			cliproxyexecutor.CallerScopeMetadataKey: "caller-user-1",
+		},
+	}
+	rootAuth, errRoot := selector.Pick(context.Background(), "openai", "model", rootOpts, auths)
+	if errRoot != nil {
+		t.Fatalf("root Pick() error = %v", errRoot)
+	}
+	rootSessionID, ok := rootOpts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey].(string)
+	if !ok || rootSessionID == "" {
+		t.Fatalf("expected non-empty canonical root session ID, got %#v", rootOpts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey])
+	}
+	if parentID := rootOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey]; parentID != nil {
+		t.Fatalf("expected nil parent ID on root session, got %#v", parentID)
+	}
+
+	// 2. Fork request: shares turn 1 & ans 1, but diverges on turn 2
+	forkOpts := cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatOpenAI,
+		OriginalRequest: []byte(`{"messages":[` +
+			`{"role":"user","content":"turn 1"},` +
+			`{"role":"assistant","content":"ans 1"},` +
+			`{"role":"user","content":"turn 2 fork branch B"}` +
+			`]}`),
+		Metadata: map[string]any{
+			cliproxyexecutor.CallerScopeMetadataKey: "caller-user-1",
+		},
+	}
+	forkAuth, errFork := selector.Pick(context.Background(), "openai", "model", forkOpts, auths)
+	if errFork != nil {
+		t.Fatalf("fork Pick() error = %v", errFork)
+	}
+	// Routing MUST keep the exact same auth for hardware KV cache reuse
+	if forkAuth.ID != rootAuth.ID {
+		t.Fatalf("fork routed to %q, want same auth %q as root session", forkAuth.ID, rootAuth.ID)
+	}
+	forkSessionID, ok := forkOpts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey].(string)
+	if !ok || forkSessionID == "" {
+		t.Fatalf("expected non-empty canonical fork session ID, got %#v", forkOpts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey])
+	}
+	// Branch identity MUST differ from root
+	if forkSessionID == rootSessionID {
+		t.Fatalf("fork session ID %q should differ from root session ID %q", forkSessionID, rootSessionID)
+	}
+	forkParentID, ok := forkOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey].(string)
+	if !ok || forkParentID == "" {
+		t.Fatalf("expected non-empty parent session ID on fork, got %#v", forkOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey])
+	}
+
+	// 3. Linear continuation on the fork branch (turn 3 on branch B)
+	forkContOpts := cliproxyexecutor.Options{
+		SourceFormat: sdktranslator.FormatOpenAI,
+		OriginalRequest: []byte(`{"messages":[` +
+			`{"role":"user","content":"turn 1"},` +
+			`{"role":"assistant","content":"ans 1"},` +
+			`{"role":"user","content":"turn 2 fork branch B"},` +
+			`{"role":"assistant","content":"ans 2 fork branch B"},` +
+			`{"role":"user","content":"turn 3 fork branch B"}` +
+			`]}`),
+		Metadata: map[string]any{
+			cliproxyexecutor.CallerScopeMetadataKey: "caller-user-1",
+		},
+	}
+	forkContAuth, errForkCont := selector.Pick(context.Background(), "openai", "model", forkContOpts, auths)
+	if errForkCont != nil {
+		t.Fatalf("forkCont Pick() error = %v", errForkCont)
+	}
+	if forkContAuth.ID != forkAuth.ID {
+		t.Fatalf("fork continuation routed to %q, want same auth %q", forkContAuth.ID, forkAuth.ID)
+	}
+	contSessionID := forkContOpts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey]
+	if contSessionID != forkSessionID {
+		t.Fatalf("fork continuation session ID = %q, want identical to fork session %q", contSessionID, forkSessionID)
+	}
+	contParentID := forkContOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey]
+	if contParentID != forkParentID {
+		t.Fatalf("fork continuation parent ID = %q, want identical to fork parent %q", contParentID, forkParentID)
+	}
+}
+
+func TestSessionAffinitySelectorLCPFailureEvictionOnCacheHit(t *testing.T) {
+	t.Parallel()
+
+	selector := NewSessionAffinitySelectorWithConfig(SessionAffinityConfig{
+		Fallback: &RoundRobinSelector{},
+		TTL:      time.Hour,
+	})
+	defer selector.Stop()
+
+	auths := []*Auth{{ID: "auth-1"}, {ID: "auth-2"}}
+
+	opts1 := cliproxyexecutor.Options{
+		SourceFormat:    sdktranslator.FormatOpenAI,
+		OriginalRequest: []byte(`{"messages":[{"role":"user","content":"test failure eviction"}]}`),
+		Metadata: map[string]any{
+			cliproxyexecutor.CallerScopeMetadataKey: "test-caller",
+		},
+	}
+
+	// 1. Initial request binds to auth-1 and succeeds
+	auth1, err1 := selector.Pick(context.Background(), "openai", "model", opts1, auths)
+	if err1 != nil {
+		t.Fatalf("Pick 1 error: %v", err1)
+	}
+	selector.OnResult(Result{
+		Provider: "openai",
+		AuthID:   auth1.ID,
+		Options:  opts1,
+		Success:  true,
+	})
+
+	// 2. Second request hits LCP cache for auth-1
+	opts2 := cliproxyexecutor.Options{
+		SourceFormat:    sdktranslator.FormatOpenAI,
+		OriginalRequest: []byte(`{"messages":[{"role":"user","content":"test failure eviction"}]}`),
+		Metadata: map[string]any{
+			cliproxyexecutor.CallerScopeMetadataKey: "test-caller",
+		},
+	}
+	auth2, err2 := selector.Pick(context.Background(), "openai", "model", opts2, auths)
+	if err2 != nil {
+		t.Fatalf("Pick 2 error: %v", err2)
+	}
+	if auth2.ID != auth1.ID {
+		t.Fatalf("Pick 2 did not hit LCP cache: got %q, want %q", auth2.ID, auth1.ID)
+	}
+
+	// Second request fails upstream (e.g. 500 error)
+	selector.OnResult(Result{
+		Provider: "openai",
+		AuthID:   auth2.ID,
+		Options:  opts2,
+		Success:  false,
+		Error:    &Error{Code: "upstream_500", Message: "500 internal server error"},
+	})
+
+	// 3. Third request should see the failed binding evicted, and fall back to round-robin
+	opts3 := cliproxyexecutor.Options{
+		SourceFormat:    sdktranslator.FormatOpenAI,
+		OriginalRequest: []byte(`{"messages":[{"role":"user","content":"test failure eviction"}]}`),
+		Metadata: map[string]any{
+			cliproxyexecutor.CallerScopeMetadataKey: "test-caller",
+		},
+	}
+	auth3, err3 := selector.Pick(context.Background(), "openai", "model", opts3, auths)
+	if err3 != nil {
+		t.Fatalf("Pick 3 error: %v", err3)
+	}
+	// Since auth-1 was evicted from LCP on failure, round-robin picks auth-2
+	if auth3.ID != "auth-2" {
+		t.Fatalf("Pick 3 was not evicted on failure: got %q, want round-robin fallback to auth-2", auth3.ID)
+	}
+}
+
+func TestSessionAffinityCodexForkWithBothSessionAndThreadIDs(t *testing.T) {
+	t.Parallel()
+
+	selector := NewSessionAffinitySelectorWithConfig(SessionAffinityConfig{
+		Fallback: &RoundRobinSelector{},
+		TTL:      time.Minute,
+	})
+	defer selector.Stop()
+
+	auths := []*Auth{{ID: "auth-codex-1"}, {ID: "auth-codex-2"}}
+
+	// Parent session
+	parentOpts := cliproxyexecutor.Options{
+		Headers: http.Header{
+			"Session-Id": []string{"parent-thread-100"},
+			"Thread-Id":  []string{"parent-thread-100"},
+		},
+		Metadata: map[string]any{},
+	}
+	parentAuth, _ := selector.Pick(context.Background(), "openai", "model", parentOpts, auths)
+
+	// Child fork has Session-Id: parent-thread-100, Thread-Id: child-thread-200, and forked_from_thread_id: parent-thread-100
+	forkOpts := cliproxyexecutor.Options{
+		Headers: http.Header{
+			"Session-Id": []string{"parent-thread-100"},
+			"Thread-Id":  []string{"child-thread-200"},
+			"X-Codex-Turn-Metadata": []string{
+				`{"session_id":"parent-thread-100","thread_id":"child-thread-200","forked_from_thread_id":"parent-thread-100"}`,
+			},
+		},
+		Metadata: map[string]any{},
+	}
+	forkAuth, errFork := selector.Pick(context.Background(), "openai", "model", forkOpts, auths)
+	if errFork != nil {
+		t.Fatalf("fork Pick() error = %v", errFork)
+	}
+	if forkAuth.ID != parentAuth.ID {
+		t.Fatalf("fork did not inherit parent auth: got %q, want %q", forkAuth.ID, parentAuth.ID)
+	}
+	// Child must NOT collapse onto parent!
+	if got := forkOpts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey]; got != "codex:child-thread-200" {
+		t.Fatalf("child fork session ID collapsed onto parent: got %v, want codex:child-thread-200", got)
+	}
+	if got := forkOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey]; got != "codex:parent-thread-100" {
+		t.Fatalf("child fork parent ID = %v, want codex:parent-thread-100", got)
+	}
+}
+
+func TestSessionAffinityNestedMetadataForkedFromThreadID(t *testing.T) {
+	t.Parallel()
+
+	selector := NewSessionAffinitySelectorWithConfig(SessionAffinityConfig{
+		Fallback: &RoundRobinSelector{},
+		TTL:      time.Minute,
+	})
+	defer selector.Stop()
+
+	auths := []*Auth{{ID: "auth-1"}, {ID: "auth-2"}}
+
+	// Parent
+	parentOpts := cliproxyexecutor.Options{
+		OriginalRequest: []byte(`{"thread_id":"parent-t-1"}`),
+		Metadata:        map[string]any{},
+	}
+	parentAuth, _ := selector.Pick(context.Background(), "openai", "model", parentOpts, auths)
+
+	// Child fork with nested metadata.forked_from_thread_id
+	forkOpts := cliproxyexecutor.Options{
+		OriginalRequest: []byte(`{"thread_id":"child-t-2","metadata":{"forked_from_thread_id":"parent-t-1"}}`),
+		Metadata:        map[string]any{},
+	}
+	forkAuth, errFork := selector.Pick(context.Background(), "openai", "model", forkOpts, auths)
+	if errFork != nil {
+		t.Fatalf("nested fork Pick() error = %v", errFork)
+	}
+	if forkAuth.ID != parentAuth.ID {
+		t.Fatalf("nested fork did not inherit parent auth: got %q, want %q", forkAuth.ID, parentAuth.ID)
+	}
+	if isFork, ok := forkOpts.Metadata[cliproxyexecutor.IsForkMetadataKey].(bool); !ok || !isFork {
+		t.Fatalf("expected is_fork=true for nested metadata fork, got %v", forkOpts.Metadata[cliproxyexecutor.IsForkMetadataKey])
+	}
+	if got := forkOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey]; got != "thread:parent-t-1" {
+		t.Fatalf("expected ParentSessionID=thread:parent-t-1, got %v", got)
+	}
+}
+
+func TestSessionAffinityCodexForkWithSessionIdHeaderAndBodyThreadId(t *testing.T) {
+	t.Parallel()
+
+	selector := NewSessionAffinitySelectorWithConfig(SessionAffinityConfig{
+		Fallback: &RoundRobinSelector{},
+		TTL:      time.Minute,
+	})
+	defer selector.Stop()
+
+	auths := []*Auth{{ID: "auth-1", Provider: "antigravity"}, {ID: "auth-2", Provider: "antigravity"}}
+
+	// Parent binds with Session-Id header
+	parentOpts := cliproxyexecutor.Options{
+		Headers:  http.Header{"Session-Id": []string{"parent-sess-uuid"}},
+		Metadata: map[string]any{},
+	}
+	parentAuth, _ := selector.Pick(context.Background(), "mixed", "gemini-3.8-flash-high", parentOpts, auths)
+
+	// Fork carries Session-Id header (parent-sess-uuid), but body contains thread_id (child-thread-uuid) and metadata.forked_from_thread_id
+	forkOpts := cliproxyexecutor.Options{
+		Headers: http.Header{"Session-Id": []string{"parent-sess-uuid"}},
+		OriginalRequest: []byte(`{
+			"thread_id": "child-thread-uuid",
+			"metadata": {
+				"forked_from_thread_id": "parent-sess-uuid"
+			}
+		}`),
+		Metadata: map[string]any{},
+	}
+	forkAuth, errFork := selector.Pick(context.Background(), "mixed", "gemini-3.8-flash-high", forkOpts, auths)
+	if errFork != nil {
+		t.Fatalf("fork Pick() error = %v", errFork)
+	}
+	if forkAuth.ID != parentAuth.ID {
+		t.Fatalf("fork did not inherit parent auth on Gemini: got %q, want %q", forkAuth.ID, parentAuth.ID)
+	}
+	if got := forkOpts.Metadata[cliproxyexecutor.CanonicalSessionIDMetadataKey]; got != "codex:child-thread-uuid" {
+		t.Fatalf("child fork collapsed onto parent: got %v, want codex:child-thread-uuid", got)
+	}
+	if got := forkOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey]; got != "codex:parent-sess-uuid" {
+		t.Fatalf("child fork parent ID = %v, want codex:parent-sess-uuid", got)
+	}
+	if isFork, ok := forkOpts.Metadata[cliproxyexecutor.IsForkMetadataKey].(bool); !ok || !isFork {
+		t.Fatalf("expected is_fork=true, got %v", forkOpts.Metadata[cliproxyexecutor.IsForkMetadataKey])
+	}
+}
+
+func TestSessionAffinitySelectorLCPCompactionPreservesAffinityAndLineage(t *testing.T) {
+	t.Parallel()
+
+	selector := NewSessionAffinitySelectorWithConfig(SessionAffinityConfig{
+		TTL: time.Hour,
+	})
+	defer selector.Stop()
+
+	auths := []*Auth{
+		{ID: "auth-1", Status: StatusActive},
+		{ID: "auth-2", Status: StatusActive},
+	}
+
+	// 1. Initial 5-turn conversation without explicit session headers (relies on LCP)
+	firstPayload := []byte(`{"contents":[
+		{"role":"user","parts":[{"text":"step 1"}]},
+		{"role":"model","parts":[{"text":"ack 1"}]},
+		{"role":"user","parts":[{"text":"step 2"}]},
+		{"role":"model","parts":[{"text":"ack 2"}]},
+		{"role":"user","parts":[{"text":"step 3"}]}
+	]}`)
+	firstOpts := cliproxyexecutor.Options{
+		SourceFormat:    sdktranslator.FormatGemini,
+		OriginalRequest: firstPayload,
+		Metadata: map[string]any{
+			cliproxyexecutor.CallerScopeMetadataKey: "caller-harness-1",
+		},
+	}
+	ctx := context.Background()
+	firstAuth, errFirst := selector.Pick(ctx, "google", "gemini-2.5-pro", firstOpts, auths)
+	if errFirst != nil {
+		t.Fatalf("first Pick() error = %v", errFirst)
+	}
+	initialSessionID, _ := firstOpts.Metadata[cliproxyexecutor.LCPAffinitySessionIDMetadataKey].(string)
+	if initialSessionID == "" {
+		t.Fatal("first Pick() did not set LCPAffinitySessionIDMetadataKey")
+	}
+
+	// Complete initial request
+	selector.OnResult(Result{
+		AuthID:   firstAuth.ID,
+		Provider: "google",
+		Model:    "gemini-2.5-pro",
+		Options:  firstOpts,
+		Success:  true,
+	})
+
+	// 2. Downstream harness compacts context:
+	// Early steps (1..2) summarized into a single turn, preserving step 3 and appending step 4
+	compactedPayload := []byte(`{"contents":[
+		{"role":"user","parts":[{"text":"<summary>Steps 1 and 2 completed</summary>"}]},
+		{"role":"model","parts":[{"text":"ack 2"}]},
+		{"role":"user","parts":[{"text":"step 3"}]},
+		{"role":"user","parts":[{"text":"step 4"}]}
+	]}`)
+	compactedOpts := cliproxyexecutor.Options{
+		SourceFormat:    sdktranslator.FormatGemini,
+		OriginalRequest: compactedPayload,
+		Metadata: map[string]any{
+			cliproxyexecutor.CallerScopeMetadataKey: "caller-harness-1",
+		},
+	}
+
+	compactedAuth, errCompacted := selector.Pick(ctx, "google", "gemini-2.5-pro", compactedOpts, auths)
+	if errCompacted != nil {
+		t.Fatalf("compacted Pick() error = %v", errCompacted)
+	}
+
+	// Credential affinity must be preserved across compaction
+	if compactedAuth.ID != firstAuth.ID {
+		t.Fatalf("compacted Pick() auth drifted: got %q, want %q", compactedAuth.ID, firstAuth.ID)
+	}
+
+	// Lineage must link back to pre-compaction session
+	parentID, _ := compactedOpts.Metadata[cliproxyexecutor.ParentSessionIDMetadataKey].(string)
+	if parentID != initialSessionID {
+		t.Fatalf("compacted ParentSessionID = %q, want %q", parentID, initialSessionID)
+	}
+
+	// Compaction milestone must be distinguished from divergent fork
+	if isCompaction, ok := compactedOpts.Metadata[cliproxyexecutor.IsCompactionMetadataKey].(bool); !ok || !isCompaction {
+		t.Fatalf("expected is_compaction=true, got %v", compactedOpts.Metadata[cliproxyexecutor.IsCompactionMetadataKey])
+	}
+	if nodeKind, ok := compactedOpts.Metadata[cliproxyexecutor.NodeKindMetadataKey].(string); !ok || nodeKind != "compaction" {
+		t.Fatalf("expected node_kind=compaction, got %v", compactedOpts.Metadata[cliproxyexecutor.NodeKindMetadataKey])
+	}
+	if isFork, ok := compactedOpts.Metadata[cliproxyexecutor.IsForkMetadataKey].(bool); ok && isFork {
+		t.Fatal("compacted continuation should not be marked as fork")
+	}
+
+	// Complete compacted request
+	selector.OnResult(Result{
+		AuthID:   compactedAuth.ID,
+		Provider: "google",
+		Model:    "gemini-2.5-pro",
+		Options:  compactedOpts,
+		Success:  true,
+	})
+
+	// 3. Subsequent turn grows linearly from compaction boundary
+	nextPayload := []byte(`{"contents":[
+		{"role":"user","parts":[{"text":"<summary>Steps 1 and 2 completed</summary>"}]},
+		{"role":"model","parts":[{"text":"ack 2"}]},
+		{"role":"user","parts":[{"text":"step 3"}]},
+		{"role":"user","parts":[{"text":"step 4"}]},
+		{"role":"model","parts":[{"text":"ack 4"}]}
+	]}`)
+	nextOpts := cliproxyexecutor.Options{
+		SourceFormat:    sdktranslator.FormatGemini,
+		OriginalRequest: nextPayload,
+		Metadata: map[string]any{
+			cliproxyexecutor.CallerScopeMetadataKey: "caller-harness-1",
+		},
+	}
+	nextAuth, errNext := selector.Pick(ctx, "google", "gemini-2.5-pro", nextOpts, auths)
+	if errNext != nil {
+		t.Fatalf("next Pick() error = %v", errNext)
+	}
+	if nextAuth.ID != firstAuth.ID {
+		t.Fatalf("next Pick() auth drifted: got %q, want %q", nextAuth.ID, firstAuth.ID)
+	}
+	compactedSessionID, _ := compactedOpts.Metadata[cliproxyexecutor.LCPAffinitySessionIDMetadataKey].(string)
+	nextSessionID, _ := nextOpts.Metadata[cliproxyexecutor.LCPAffinitySessionIDMetadataKey].(string)
+	if nextSessionID != compactedSessionID {
+		t.Fatalf("linear extension session changed: got %q, want %q", nextSessionID, compactedSessionID)
+	}
+	if isFork, ok := nextOpts.Metadata[cliproxyexecutor.IsForkMetadataKey].(bool); ok && isFork {
+		t.Fatal("linear continuation must not be marked as fork")
+	}
+}
+
+func TestSessionAffinitySelectorLookupAffinityProviderAlias(t *testing.T) {
+	t.Parallel()
+
+	selector := NewSessionAffinitySelectorWithConfig(SessionAffinityConfig{
+		TTL: time.Hour,
+	})
+	defer selector.Stop()
+
+	auths := []*Auth{{ID: "auth-gemini-1", Status: StatusActive}}
+	opts := cliproxyexecutor.Options{
+		SourceFormat:    sdktranslator.FormatGemini,
+		OriginalRequest: []byte(`{"contents":[{"role":"user","parts":[{"text":"hello lookup"}]}]}`),
+		Metadata: map[string]any{
+			cliproxyexecutor.CallerScopeMetadataKey:             "caller-lookup",
+			cliproxyexecutor.SessionAffinityProviderMetadataKey: "google",
+		},
+	}
+	ctx := context.Background()
+	picked, errPick := selector.Pick(ctx, "google", "gemini-2.5-pro", opts, auths)
+	if errPick != nil || picked == nil {
+		t.Fatalf("Pick() failed: %v", errPick)
+	}
+
+	lcpID, ok := opts.Metadata[cliproxyexecutor.LCPAffinitySessionIDMetadataKey].(string)
+	if !ok || lcpID == "" {
+		t.Fatal("expected LCPAffinitySessionIDMetadataKey to be set")
+	}
+
+	// Query with alias "gemini" instead of "google"
+	boundAuth, status := selector.LookupAffinity("gemini", "gemini-2.5-pro", lcpID)
+	if status != "bound" || boundAuth != "auth-gemini-1" {
+		t.Fatalf("LookupAffinity(gemini) = (%q, %q), want (auth-gemini-1, bound)", boundAuth, status)
+	}
+
+	// Query with "google"
+	boundAuthGoogle, statusGoogle := selector.LookupAffinity("google", "gemini-2.5-pro", lcpID)
+	if statusGoogle != "bound" || boundAuthGoogle != "auth-gemini-1" {
+		t.Fatalf("LookupAffinity(google) = (%q, %q), want (auth-gemini-1, bound)", boundAuthGoogle, statusGoogle)
+	}
+}
+
 func BenchmarkSessionAffinitySelectorPickLCP(b *testing.B) {
 	log.SetLevel(log.WarnLevel)
 	defer log.SetLevel(log.InfoLevel)
