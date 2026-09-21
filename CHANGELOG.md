@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.2.163-arsydoni4326-alt]
+
+### Fixed
+
+- **Upstream merge conflict resolved (`upstream/main` @ `a5ab6952` → `develop`)**: The in-progress merge (Kimi.ai OAuth/domain support, Codex session steering, LCP compaction/fork lineage, context compaction metadata) had 7 files with unresolved conflicts:
+  - `internal/api/handlers/management/auth_files_provider_oauth.go`, `internal/auth/kimi/kimi.go`: **both sides kept** — the fork's per-request OAuth proxy override (`NewKimiAuthWithProxyURL`, "Do Not Use Proxy" toggle) was combined with upstream's kimi.ai domain support via a new `NewKimiAuthWithDomainAndProxyURL(cfg, domain, proxyURL)` constructor. Both features remain fully functional.
+  - `sdk/cliproxy/auth/selector.go`, `sdk/cliproxy/session/info.go`, `sdk/cliproxy/session/lcp.go`, `sdk/cliproxy/auth/selector_lcp_test.go`, `sdk/cliproxy/session/lcp_test.go`: upstream's side is a verified superset of the fork's divergent session-affinity/LCP rewrite (fork's rolling-prefix session-ID derivation, `nowFunc` mockable clock build fix, compaction handling, and fork-lineage features all exist upstream with extended signatures; upstream additionally adds fork/compaction/subagent lineage metadata, tail fingerprints, environment digest, and monotonic access generations). Auto-merged regions that would have mixed the two divergent implementations were aligned to upstream's coherent version.
+- **Merge-regression fix in session affinity**: The auto-merge initially produced a mix of fork-era and upstream session-affinity code that broke 3 upstream tests (`TestSessionAffinityCodexForkWithBothSessionAndThreadIDs`, `TestSessionAffinityCodexForkWithSessionIdHeaderAndBodyThreadId`, `TestSessionAffinityNestedMetadataForkedFromThreadID`) by collapsing child-fork sessions onto their parents. Resolved by taking upstream's coherent implementation, which retains the fork-era feature set and passes all tests.
+
+### Verified
+
+- `go build -o test-output ./cmd/server` succeeds; `gofmt` clean on all touched files.
+- `go test ./sdk/cliproxy/auth/... ./sdk/cliproxy/session/... ./internal/auth/kimi/... ./internal/api/handlers/management/... -count=1` passes (full-suite log recorded in `session.md`).
+
 ## [v7.2.162-arsydoni4326-alt]
 
 ### Fixed
