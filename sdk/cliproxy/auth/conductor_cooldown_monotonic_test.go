@@ -362,6 +362,7 @@ func TestManager_MarkResult_CredentialScopeDoesNotInheritModelQuotaDeadline(t *t
 
 func TestManager_MarkResult_CredentialScopeBackoffPersistsAcrossWindows(t *testing.T) {
 	withQuotaCooldownEnabled(t)
+	withDeterministicBackoff(t)
 
 	m, auth := newCooldownMonotonicManager(t, "model-a", "model-b")
 	ctx := context.Background()
@@ -405,6 +406,7 @@ func TestManager_MarkResult_CredentialScopeBackoffPersistsAcrossWindows(t *testi
 
 func TestManager_MarkResult_CredentialScopeDoesNotInheritModelBackoffLevel(t *testing.T) {
 	withQuotaCooldownEnabled(t)
+	withDeterministicBackoff(t)
 
 	retryAfter := 10 * time.Second
 	tests := []struct {
