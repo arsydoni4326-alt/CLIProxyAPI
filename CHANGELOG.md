@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.2.164-arsydoni4326-alt]
+
+### Fixed
+
+- **Upstream merge resolved (`upstream/main` @ `c404af96` → `develop`)**: Merged 10 new upstream commits (c404af96..580df95a) including auth priority preservation, Claude text block merging, MetaMint subscription metadata, pluginhost HTTP bridge, credential-scoped quota isolation, Gemini $ref stringification, usage trace IDs, log collision fixes, Devin model updates, and Antigravity tool ID sanitization. All fork-specific features preserved per `MERGE-PRESERVATION-fork-fixes.md`.
+- **Test flakiness in credential-scoped cooldown tests**: Added `withDeterministicBackoff()` to disable jitter in new upstream tests that expected hardcoded cooldown values.
+
+### Changed
+
+- **`nextQuotaCooldown`**: Updated to use configurable base/max/jitter from `QuotaBackoffConfig` (fork feature preserved).
+
 ## [v7.2.163-arsydoni4326-alt]
 
 ### Fixed

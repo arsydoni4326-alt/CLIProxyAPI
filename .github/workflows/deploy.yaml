@@ -32,6 +32,7 @@ jobs:
         id: git_meta
         run: |
           # Fallback to 'unknown' if no tags exist yet
+          BUILD_DATE="$(date +%Y-%m-%d)"
           CPAM_VERSION=$(git -C frontend describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           CPAM_COMMIT=$(git -C frontend rev-parse --short HEAD)
           echo "CPAM_VERSION=$CPAM_VERSION" >> $GITHUB_OUTPUT
@@ -40,6 +41,7 @@ jobs:
           CPA_COMMIT=$(git rev-parse --short HEAD)
           echo "CPA_VERSION=$CPA_VERSION" >> $GITHUB_OUTPUT
           echo "CPA_COMMIT=$CPA_COMMIT" >> $GITHUB_OUTPUT
+          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_OUTPUT
 
       # QEMU is required to emulate the arm64 architecture on the x86 runner
       - name: Set up QEMU
@@ -83,6 +85,7 @@ jobs:
             CPAM_COMMIT=${{ steps.git_meta.outputs.CPAM_COMMIT }}
             CPA_VERSION=${{ steps.git_meta.outputs.CPA_VERSION }}
             CPA_COMMIT=${{ steps.git_meta.outputs.CPA_COMMIT }}
+            BUILD_DATE=${{ steps.git_meta.outputs.BUILD_DATE }}
           # platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -3,6 +3,7 @@ FROM oven/bun:1.3.14 AS react-builder
 WORKDIR /app
 ARG CPAM_VERSION=v0.0.0
 ARG CPAM_COMMIT=unknown
+ARG BUILD_DATE=2025-09-09
 COPY frontend/package.json frontend/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY frontend/. .
@@ -18,6 +19,7 @@ WORKDIR /app
 # Define the build arguments passed from GitHub Actions
 ARG CPA_VERSION=v0.0.0
 ARG CPA_COMMIT=unknown
+ARG BUILD_DATE=2025-09-09
 RUN set -eux;     \
     apt update -y; \
     apt install -y --no-install-recommends       \
@@ -36,7 +38,6 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN set -eux;   \
-    export BUILD_DATE="$(date +%Y-%m-%d)";   \
     CGO_ENABLED=1 \
         GOOS=linux \
         go build \
