@@ -31,7 +31,8 @@ jobs:
           changelog_entries_file="$(mktemp)"
           changelog_notes_file="$(mktemp)"
           updated_notes_file="$(mktemp)"
-          trap 'rm -f "$release_notes_file" "$generated_notes_file" "$changelog_entries_file" "$changelog_notes_file" "$updated_notes_file"' EXIT
+          truncated_notes_file="$(mktemp)"
+          trap 'rm -f "$release_notes_file" "$generated_notes_file" "$changelog_entries_file" "$changelog_notes_file" "$updated_notes_file" "$truncated_notes_file"' EXIT
 
           cat > "$release_notes_file" <<'EOF'
           <!-- cliproxyapi-linux-release-assets:start -->
@@ -84,6 +85,29 @@ jobs:
             printf '\n'
             cat "$changelog_notes_file"
           } > "$updated_notes_file"
+
+          # GitHub caps release bodies at 125,000 characters. Keep the combined
+          # body (changelog + truncation note) at or below 120,000 characters.
+          max_body_chars=120000
+          if [[ "$(wc -c < "$updated_notes_file")" -gt "$max_body_chars" ]]; then
+            if [[ -n "$previous_tag" ]]; then
+              truncation_note="**NOTE:** Release notes truncated to fit GitHub's 125,000 character limit. See the [full changelog](https://github.com/${GH_REPO}/compare/${previous_tag}...${GITHUB_REF_NAME}) for complete details."
+            else
+              truncation_note="**NOTE:** Release notes truncated to fit GitHub's 125,000 character limit. See the [full commit history](https://github.com/${GH_REPO}/commits/${GITHUB_REF_NAME}) for complete details."
+            fi
+            truncation_note=$'\n\n---\n'"$truncation_note"$'\n'
+            note_bytes="$(printf '%s' "$truncation_note" | wc -c)"
+            cut_bytes=$(( max_body_chars - note_bytes ))
+            # Cut at a line boundary so markdown is not split mid-line.
+            head -c "$cut_bytes" "$updated_notes_file" > "$truncated_notes_file"
+            if [[ -n "$(tail -c 1 "$truncated_notes_file")" ]]; then
+              sed -i '$ d' "$truncated_notes_file"
+            fi
+            {
+              cat "$truncated_notes_file"
+              printf '%s' "$truncation_note"
+            } > "$updated_notes_file"
+          fi
 
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$updated_notes_file"
