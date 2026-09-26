@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.2.165-arsydoni4326-alt]
+
+### Fixed
+
+- **Upstream merge (`upstream/main` @ `c404af96` → `develop`)**: Merged 18 new upstream commits (c404af96..9bdde54b) including XAI response sanitization with resolved thinking support, native Codex ChatGPT routing hints, Claude 2.1.280 fingerprint/thinking visibility alignment, Claude tool name sanitization with fallback schema injection, thought signature handling, stream rewrite log noise reduction, Antigravity `Session_id` header replay support, Devin Grok model `owned_by` fixes, connection close on stop with state guards, request context lifetime fixes, read-only interceptor body cloning avoidance, session extraction performance (no large payload rescans), and client id header/subscription metadata fixes. All fork-specific features preserved per `MERGE-PRESERVATION-fork-fixes.md`; no conflicts required manual resolution.
+
+### Changed
+
+- **`sdk/cliproxy/auth/conductor_cooldown.go`**: Upstream now honors `RetryAfter` from upstream responses for model-support and 404 errors (fork's configurable backoff preserved).
+
 ## [v7.2.164-arsydoni4326-alt]
 
 ### Fixed
