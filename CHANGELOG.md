@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.3.20-arsydoni4326-alt]
+
+### Fixed
+
+- **Release workflow (`.github/workflows/release.yaml`)**: Fixed `HTTP 422: Validation Failed ... body is too long (maximum is 125000 characters)` when creating/editing GitHub releases. The combined release body (asset notes + changelog + auto-generated notes) is now hard-capped at 120,000 characters; oversized bodies are truncated at a line boundary and a note linking to the full changelog is appended, so the changelog plus note always fit within GitHub's limit.
+
+### Changed
+
+- **`.github/workflows/docker-image.yml`**: Removed the Docker image workflow.
+- **`cpauk` submodule**: Bumped to `edc4d1c4` (brings in `v1.16.3-arsydoni4326-alt`).
+
 ## [v7.2.165-arsydoni4326-alt]
 
 ### Fixed
