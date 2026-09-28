@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.3.21-arsydoni4326-alt]
+
+### Fixed
+
+- **Upstream merge (`upstream/main` @ `63f06a93` → `develop`)**: Merged 30 new upstream commits (63f06a93..acdace93) including the v8 configuration migration (v8 layout with `config-version: 8`, `server`/`management`/`access`/`routing`/`requests`/`oauth`/`multimedia`/`observability` sections, legacy→v8 translation layer, and `/v8/management` routes), bonded-interface discovery support, Gemini thought-signature preservation in interactions translation, SSE trailing-newline fixes, xAI image `quality` parameter support, web search tool cleanup, pluginhost disabled-state preservation, Devin model aggregation/UID normalization, Codex service tier support, Claude tool-result adjacency for Antigravity, thinking baseline/effort logging, auth invalid_grant backoff and capability preservation, and Claude cloaking-by-default for direct Messages OAuth requests. All fork-specific features preserved per `MERGE-PRESERVATION-fork-fixes.md`.
+
+### Changed
+
+- **Module path**: The fork remains on `github.com/router-for-me/CLIProxyAPI/v7` (upstream migrated to `v8`); all merged imports were reverted to the `v7` path so the fork's `v7.x.y-arsydoni4326-alt` versioning and Go module contract stay consistent.
+- **`config.example.yaml`**: Rebuilt on the upstream v8 layout. Fork-specific management options (`audit-log-enabled`, `max-failed-attempts`, `ban-duration`) are documented under `management`; fork-only options without a v8 counterpart (`flow-visualization-enabled`, `quota-backoff`) are documented in the legacy compatibility notes.
+- **`internal/config/config_types.go`**: Kept the fork's `MaxFailedAttempts`/`BanDuration` fields and `QuotaBackoffConfig` type alongside upstream's new `BaseURL` field on `RemoteManagement`.
+
 ## [v7.3.20-arsydoni4326-alt]
 
 ### Fixed
