@@ -345,6 +345,8 @@ type RemoteManagement struct {
 	// BanDuration is how long a blocked IP stays blocked. Accepts duration strings
 	// like "30m", "1h", "2h30m". Empty or invalid values use the default of 30m.
 	BanDuration string `yaml:"ban-duration"`
+	// BaseURL specifies the base URL of the remote management API for TUI client mode (e.g. "https://proxy.example.com").
+	BaseURL string `yaml:"base-url,omitempty" json:"base-url,omitempty"`
 }
 
 // MaxFailures returns the configured failure threshold, defaulting to 5.
@@ -744,6 +746,10 @@ type CodexModel struct {
 	// native agent_message items or empty-signature thinking blocks. Default false
 	// keeps the native behavior unchanged.
 	IsCompat bool `yaml:"is-compat,omitempty" json:"is-compat,omitempty"`
+
+	// SupportConfigurationUpdate enables configuration_update for this API-key model.
+	// It defaults to false, independently of the built-in OAuth model catalog.
+	SupportConfigurationUpdate bool `yaml:"support-configuration-update,omitempty" json:"support-configuration-update,omitempty"`
 
 	// Thinking configures the thinking/reasoning capability for this model.
 	Thinking *registry.ThinkingSupport `yaml:"thinking,omitempty" json:"thinking,omitempty"`
