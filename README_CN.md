@@ -60,18 +60,6 @@ PackyCode 为本软件用户提供了特别优惠：使用<a href="https://www.p
 <td>感谢 APIKEY.FUN 赞助本项目！APIKEY.FUN 是一家专业的企业级 AI 中转站，致力于为企业和个人开发者提供稳定、高效、低成本的 AI 模型 API 接入服务。平台支持 Claude、OpenAI、Gemini 等主流热门模型，价格低至官方原价的 7%。通过本项目<a href="https://apikey.fan/register?aff=CLIProxyAPI">专属链接</a>注册，还可享受最高 <b>充值永久 95 折</b> 专属优惠。</td>
 </tr>
 <tr>
-<td width="180"><a href="https://t.me/CyberWlD/218"><img src="./assets/cyberpay.jpg" alt="CyberPay" width="150"></a></td>
-<td>赛博支付（CyberPay）成立于2021年。我们致力于为AI从业者商家提供稳定、高效、安全的支付结算解决方案。与我们合作即可使您的网站平台解决用户支付宝/微信收款问题。承接售卖GPT 、Gemini、Claude、Codex账号与中转站等各类业务合作，解决各位商家收款困难痛点。<a href="https://t.me/CyberWlD/218">联系我们</a>开启您的致富通道。</td>
-</tr>
-<tr>
-<td width="180"><a href="https://console.apito.ai/agent/register/pJq9T52Fpugrhpgo"><img src="./assets/claudeapi.png" alt="ClaudeAPI" width="150"></a></td>
-<td>感谢 <a href="ugrhpghttps://console.apito.ai/agent/register/pJq9T52Fpugrhpgo">Claude API</a> 赞助本项目！Claude API 是专注 Claude 模型的官方渠道 API 服务商，基于 Anthropic 官方 Key 与 AWS Bedrock 官方渠道，提供稳定的 Claude Code 与 Agent 应用接入体验，支持 Claude 全系列模型，保留 Tool Use、长上下文等官方能力。服务非逆向、非降智，适合 Claude Code 深度用户、Agent 工程师与企业技术团队使用。通过<a href="https://console.apito.ai/agent/register/pJq9T52Fpugrhpgo">专属链接</a>注册后联系客服，可领取免费测试额度，并支持开票和团队对接。</td>
-</tr>
-<tr>
-<td width="180"><a href="https://code0.ai/agent/register/slxVMR3uVBoRgNBf"><img src="./assets/code0.png" alt="code0" width="150"></a></td>
-<td>感谢 <a href="https://code0.ai/agent/register/slxVMR3uVBoRgNBf">Code0</a> 赞助本项目！code0.ai 是面向开发者与技术团队的 AI 编程工作台，聚合 Claude Code、Codex 等主流 Agent 编程能力，支持代码生成、项目理解、调试修复、代码审查与文档生成等常见研发场景。适合独立开发者、Agent 工程师、开源项目维护者和企业研发团队使用，支持开票和团队对接。通过<a href="https://code0.ai/agent/register/slxVMR3uVBoRgNBf">专属链接</a>注册后联系客服，可领取免费测试额度，体验更高效的 AI 编程工作流。</td>
-</tr>
-<tr>
 <td width="180"><a href="https://api.fenno.ai/s/Cvf0"><img src="./assets/fennoai.png" alt="FennoAI" width="150"></a></td>
 <td>FennoAI 是一家稳定、高效的API 中转服务商，目前主要提供 Codex 中转服务，兼容OpenAI 及 Anthropic 协议，可灵活接入 Codex、Claude Code、OpenCode等主流编程工具，可稳定支撑千亿Token/日的企业级调用需求，支持国内及海外主体公对公结算、开票。FennoAI 为 CLIProxyAPI 的用户提供了专属福利：通过<a href="https://api.fenno.ai/s/Cvf0">专属链接</a>购买订阅，仅需 1.99 美元即可获得价值 50 美元的 Coding Plan 额度。同时支持邀请奖励，邀请好友购买最高可获得 20% 返佣，邀请越多，奖励越高。</td>
 </tr>
@@ -89,7 +77,7 @@ PackyCode 为本软件用户提供了特别优惠：使用<a href="https://www.p
 </tr>
 <tr>
 <td width="180"><a href="https://www.axisnow.io/zh"><img src="./assets/axisnow.png" alt="AxisNow" width="150"></a></td>
-<td>保护并加速网站与 API，兼顾中国大陆及全球的访问体验，并通过客户端 SDK，将加速与安全能力延伸至原生/移动 App � <b>自建私有部署 CDN｜订阅式高防 CDN｜自主可控、灵活组合的 CDN 网络。</b></td>
+<td>保护并加速网站与 API，兼顾中国大陆及全球的访问体验，并通过客户端 SDK，将加速与安全能力延伸至原生/移动 App � <b>自建私有部署 CDN｜订阅式高防 CDN｜自主可控、灵活组合的 CDN 网络。</b></td>
 </tr>
 <tr>
 <td width="180"><a href="https://www.swiftproxy.net/?code=PR67S9A95"><img src="./assets/swiftproxy.png" alt="Swiftproxy" width="150"></a></td>
@@ -97,7 +85,7 @@ PackyCode 为本软件用户提供了特别优惠：使用<a href="https://www.p
 </td></tr>
 <tr>
 <td width="180"><a href="https://aiberm.com?ref=cpa"><img src="./assets/aiberm.png" alt="Aiberm" width="150"></a></td>
-<td>本项目由 Aiberm 赞助�为开发者提供统一且优惠的 AI API。通过一个端点即可访问 Claude、GPT、Grok、DeepSeek、GLM、Kimi 和 MiniMax：Claude 优惠 85201390%，GPT 优惠 90%，Grok 优惠 80%。同时支持图片生成，包括 GPT Image 2 和 Nano Banana。<a href="https://aiberm.com?ref=cpa">访问 Aiberm</a>。</td>
+<td>本项目由 Aiberm 赞助�为开发者提供统一且优惠的 AI API。通过一个端点即可访问 Claude、GPT、Grok、DeepSeek、GLM、Kimi 和 MiniMax：Claude 优惠 85201390%，GPT 优惠 90%，Grok 优惠 80%。同时支持图片生成，包括 GPT Image 2 和 Nano Banana。<a href="https://aiberm.com?ref=cpa">访问 Aiberm</a>。</td>
 </tr>
 <tr>
 <td width="180"><a href="https://www.rapidproxy.io/?code=KHM9B6E6M"><img src="./assets/rapidproxy.png" alt="RapidProxy" width="150"></a></td>
@@ -110,6 +98,10 @@ PackyCode 为本软件用户提供了特别优惠：使用<a href="https://www.p
 <tr>
 <td width="180"><a href="https://agentmarket.fluxapay.xyz/marketplace/tokenplans"><img src="./assets/fluxa-baidu-ai-cloud.png" alt="FluxA &amp; Baidu AI Cloud" width="150"></a></td>
 <td>感谢 FluxA &amp; Baidu AI Cloud 对本项目的支持！ FluxA 与百度智能云联合推出 AgenticPlan，为 AI Agent 提供自主购买/管理/使用模型、API、工具的能力。内含百度千帆 TokenPlan，低至6折，可使用 DeepSeek V4、GLM 5.2、Kimi 等旗舰模型，并获赠 FluxA AgentMarket API的调用额度，解锁搜索、数据抓取、社交媒体、金融、加密、生图、视频等 1000+ 付费 API。<br><br>在用户授权下，AI Agent 还可借助官方的Visa卡支付自主采购资源、管理 API Key、监控用量并规划续费，帮助 Agent 从「自主完成任务」升级为真正能够「自主规划预算，完成任务」。<a href="https://agentmarket.fluxapay.xyz/marketplace/tokenplans">进一步了解 AgenticPlan</a>。</td>
+</tr>
+<tr>
+<td width="180"><a href="https://www.openlux.ai/register?channel=c_6axb1q5n"><img src="./assets/openlux.png" alt="OpenLux" width="150"></a></td>
+<td>感谢 OpenLux 对本项目的赞助！Openlux是一个面向企业的一站式 AI 聚合平台，汇集全球各大厂商主流大模型，平台提供高效、稳定的服务与及时的技术支持。Claude、OpenAI、Gemini 系列模型基准折扣分别低至官方的 0.882 折、0.4 折和 0.8 折。<br><br>CLI Proxy API 用户还可享受专属福利：通过专属链接注册，充值最高可享 7.5% 优惠！<br><br>立即体验：<a href="https://www.openlux.ai/register?channel=c_6axb1q5n">https://www.openlux.ai/register?channel=c_6axb1q5n</a></td>
 </tr>
 </tbody>
 </table>

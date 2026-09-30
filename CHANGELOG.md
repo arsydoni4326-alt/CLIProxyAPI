@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.3.22-arsydoni4326-alt]
+
+### Fixed
+
+- **Upstream merge (`upstream/main` @ `acdace93` → `d33f63f8`)**: Merged 10 new upstream commits including UUIDv7 request ID generation, Home credential capabilities and quota APIs, Codex subscription plan type extraction and persistence, Claude MCP alias remapping in tool_addition/tool_removal blocks, Codex empty function call arguments normalization in responses requests, config v8 migration preservation of unknown nested fields as comments, OpenAI routed home model compatibility options, and Codex resolved compat for multi-agent v2. All fork-specific features preserved per `MERGE-PRESERVATION-fork-fixes.md`.
+
+### Changed
+
+- **Module path**: All new test files from upstream (codex_executor_auth_test.go, openai_compat_home_options_test.go, codex_auth_record_test.go, home_v8_model_capabilities_test.go, quota.go, quota_test.go) had their imports corrected from `v8` to `v7` per fork module path policy.
+- **`cpauk` submodule**: Updated to commit `6737f27b`.
+
 ## [v7.3.21-arsydoni4326-alt]
 
 ### Fixed
