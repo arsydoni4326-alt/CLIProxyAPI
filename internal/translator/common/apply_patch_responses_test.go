@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	applypatch "github.com/router-for-me/CLIProxyAPI/v8/internal/client/codex/apply-patch"
+	applypatch "github.com/router-for-me/CLIProxyAPI/v7/internal/client/codex/apply-patch"
 	"github.com/tidwall/gjson"
 )
 
