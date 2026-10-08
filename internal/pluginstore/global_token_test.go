@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/router-for-me/CLIProxyAPI/v8/internal/githubauth"
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/githubauth"
 )
 
 func TestGlobalGitHubTokenAuth(t *testing.T) {
